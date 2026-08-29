@@ -7,9 +7,9 @@ from pypdf import PdfReader
 from PIL import Image
 
 # Microservice ports
-PREPROCESSING_PORT = 8000
-EXTRACTION_PORT = 8001
-VALIDATION_PORT = 8002
+PREPROCESSING_PORT = 8010
+EXTRACTION_PORT = 8011
+VALIDATION_PORT = 8012
 
 class JobStatusManager:
     """In-memory status store for background pipeline jobs."""
@@ -52,6 +52,21 @@ def split_pdf_to_pages(pdf_path: str, output_dir: str) -> list:
         num_pages = len(reader.pages)
         print(f"[Splitter] PDF has {num_pages} pages.")
         
+        # Try importing fitz (PyMuPDF) for real image conversion without Poppler dependency
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            for idx in range(len(doc)):
+                page = doc.load_page(idx)
+                pix = page.get_pixmap(dpi=150)
+                page_path = os.path.join(output_dir, f"page_{idx+1}.png")
+                pix.save(page_path)
+                page_paths.append((idx + 1, page_path))
+            print(f"[Splitter] Successfully rendered {len(doc)} pages using PyMuPDF.")
+            return page_paths
+        except Exception as fitz_err:
+            print(f"[Splitter] PyMuPDF rendering failed ({fitz_err}). Trying pdf2image...")
+
         # Try importing pdf2image for real image conversion
         try:
             from pdf2image import convert_from_path
@@ -62,7 +77,7 @@ def split_pdf_to_pages(pdf_path: str, output_dir: str) -> list:
                 page_paths.append((idx + 1, page_path))
             return page_paths
         except Exception as img_err:
-            print(f"[Splitter] Rendering failed ({img_err}). Falling back to text-based extraction...")
+            print(f"[Splitter] pdf2image rendering failed ({img_err}). Falling back to text-based extraction...")
             
         # Fallback: Extract text or generate placeholder page images
         for idx in range(num_pages):
@@ -261,7 +276,8 @@ async def run_pipeline_task(job_id: str, file_path: str, engine: str):
     """
     Background worker orchestrating the split-classify-batch-extract-merge pipeline.
     """
-    temp_dir = f"temp_job_{job_id}"
+    import tempfile
+    temp_dir = os.path.join(tempfile.gettempdir(), f"terravision_job_{job_id}")
     try:
         # Step 1: Split
         job_manager.update_job(job_id, "processing", 10, "Splitting multi-page document...")

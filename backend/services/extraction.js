@@ -2,11 +2,11 @@ const express = require('express');
 const router = express.Router();
 const http = require('http');
 
-// Proxy /api/extraction/extract requests to the Python microservice at http://127.0.0.1:8001/extract
+// Proxy /api/extraction/extract requests to the Python microservice at http://127.0.0.1:8011/extract
 router.post('/extract', (req, res) => {
   const options = {
     hostname: '127.0.0.1',
-    port: 8001,
+    port: 8011,
     path: '/extract' + (req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''),
     method: 'POST',
     headers: req.headers
@@ -26,7 +26,7 @@ router.post('/extract', (req, res) => {
     console.error('[Node Extraction Proxy Error]:', err.message);
     res.status(502).json({ 
       success: false, 
-      error: 'Failed to connect to Python Extraction microservice. Ensure it is running on port 8001.' 
+      error: 'Failed to connect to Python Extraction microservice. Ensure it is running on port 8011.' 
     });
   });
 });

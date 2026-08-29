@@ -18,10 +18,69 @@ const verificationService = require('./services/verification');
 const pipelineService = require('./services/pipeline');
 const recordsService = require('./services/records');
 const verificationMarkService = require('./services/verification-mark');
+const documentsService = require('./services/documents');
 
-// Health check endpoint
+// Basic health check for this Express server
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Land Records Backend is active' });
+  res.json({ status: 'OK', service: 'express-backend', port: PORT });
+});
+
+// Aggregated health check — polls all Python microservices
+app.get('/api/health', async (req, res) => {
+  const services = [
+    { name: 'Express Backend',     url: `http://127.0.0.1:${PORT}/health` },
+    { name: 'Preprocessing API',   url: 'http://127.0.0.1:8010/health' },
+    { name: 'Extraction API',      url: 'http://127.0.0.1:8011/health' },
+    { name: 'Validation API',      url: 'http://127.0.0.1:8012/health' },
+    { name: 'Pipeline API',        url: 'http://127.0.0.1:8013/health' },
+    { name: 'Signing/Verify API',  url: 'http://127.0.0.1:8014/health' },
+  ];
+
+  const checkService = (svc) => new Promise((resolve) => {
+    const isHttps = svc.url.startsWith('https');
+    const transport = isHttps ? require('https') : require('http');
+    const timeout = setTimeout(() => {
+      resolve({ name: svc.name, status: 'offline', error: 'timeout' });
+    }, 2500);
+
+    try {
+      const urlObj = new URL(svc.url);
+      const options = {
+        hostname: urlObj.hostname,
+        port: parseInt(urlObj.port) || (isHttps ? 443 : 80),
+        path: urlObj.pathname,
+        method: 'GET',
+      };
+
+      const request = transport.request(options, (response) => {
+        clearTimeout(timeout);
+        let data = '';
+        response.on('data', chunk => { data += chunk; });
+        response.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            resolve({ name: svc.name, status: 'online', httpStatus: response.statusCode, detail: json });
+          } catch {
+            resolve({ name: svc.name, status: response.statusCode < 400 ? 'online' : 'error', httpStatus: response.statusCode });
+          }
+        });
+      });
+
+      request.on('error', (err) => {
+        clearTimeout(timeout);
+        resolve({ name: svc.name, status: 'offline', error: err.message });
+      });
+
+      request.end();
+    } catch (err) {
+      clearTimeout(timeout);
+      resolve({ name: svc.name, status: 'offline', error: err.message });
+    }
+  });
+
+  const results = await Promise.all(services.map(checkService));
+  const allOnline = results.every(r => r.status === 'online');
+  res.json({ overall: allOnline ? 'healthy' : 'degraded', services: results });
 });
 
 // Setup mount points/routes for service modules if needed
@@ -29,8 +88,14 @@ app.use('/api/preprocessing', preprocessingService.router);
 app.use('/api/extraction', extractionService.router);
 app.use('/api/validation', validationService.router);
 app.use('/api/verification', verificationService.router);
+app.use('/api/pipeline', pipelineService.router);
 app.use('/api/records', recordsService.router);
 app.use('/api/verification-mark', verificationMarkService.router);
+
+// Document upload entry point + clean job status API
+app.use('/api/documents', documentsService.router);
+// Alias /api/jobs → documents router handles /jobs/:id and /jobs/:id/results
+app.use('/api', documentsService.router);
 
 // Public verification landing page: GET /verify/:document_id
 app.get('/verify/:document_id', async (req, res) => {

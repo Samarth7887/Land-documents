@@ -158,9 +158,12 @@ def enhance_and_denoise(image):
     xp = [0, 64, 128, 192, 255]
     fp = [0, 16, 128, 240, 255] # Custom contrast curve mapping
     
-    # Stretch histogram dynamically
+    # Stretch histogram dynamically if there is a contrast difference
     p2, p98 = np.percentile(gray, (2, 98))
-    gray_stretched = np.clip((gray - p2) * 255.0 / (p98 - p2), 0, 255).astype(np.uint8)
+    if p98 - p2 > 10:
+        gray_stretched = np.clip((gray - p2) * 255.0 / (p98 - p2), 0, 255).astype(np.uint8)
+    else:
+        gray_stretched = gray.copy()
     
     # 2. Denoise with a light Gaussian blur to smooth background
     blurred = cv2.GaussianBlur(gray_stretched, (3, 3), 0)

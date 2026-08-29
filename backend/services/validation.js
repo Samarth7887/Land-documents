@@ -17,7 +17,7 @@ router.post('/validate', (req, res) => {
 
   const options = {
     hostname: '127.0.0.1',
-    port: 8002,
+    port: 8012,
     path: '/validate',
     method: 'POST',
     headers: {
@@ -42,7 +42,7 @@ router.post('/validate', (req, res) => {
     console.error('[Node Validation Proxy Error]:', err.message);
     res.status(502).json({ 
       success: false, 
-      error: 'Failed to connect to Python Validation microservice. Ensure it is running on port 8002.' 
+      error: 'Failed to connect to Python Validation microservice. Ensure it is running on port 8012.' 
     });
   });
 

@@ -1,10 +1,16 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import VerificationConsole from './pages/verification-console/VerificationConsole'
 import Dashboard from './pages/dashboard/Dashboard'
+import DocumentUpload from './pages/pipeline/DocumentUpload'
 
 function App() {
   const [activeView, setActiveView] = useState('verification') // default to verification console
   const [activeTab, setActiveTab] = useState('preprocessing')
+
+  // Service Health Monitor States
+  const [healthData, setHealthData] = useState(null)
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [healthError, setHealthError] = useState(null)
 
   // Interactive Developer Console States
   const [selectedFile, setSelectedFile] = useState(null)
@@ -73,6 +79,20 @@ function App() {
     }
   }
 
+  const fetchHealth = useCallback(async () => {
+    setHealthLoading(true)
+    setHealthError(null)
+    try {
+      const res = await fetch('http://localhost:5000/api/health')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setHealthData(await res.json())
+    } catch (err) {
+      setHealthError(err.message)
+    } finally {
+      setHealthLoading(false)
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
       
@@ -122,6 +142,26 @@ function App() {
           >
             Developer Platform
           </button>
+          <button
+            onClick={() => { setActiveView('health'); fetchHealth() }}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              activeView === 'health'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Service Health
+          </button>
+          <button
+            onClick={() => setActiveView('upload')}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              activeView === 'upload'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            ⬆ Document Upload
+          </button>
         </div>
 
         <div className="flex items-center space-x-4">
@@ -134,6 +174,110 @@ function App() {
       {/* Main Content Area depending on Active View */}
       {activeView === 'verification' && <VerificationConsole />}
       {activeView === 'dashboard' && <Dashboard />}
+      {activeView === 'upload' && <DocumentUpload />}
+      {activeView === 'health' && (
+        <div className="flex-1 p-6 overflow-y-auto">
+          <div className="max-w-3xl mx-auto space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-100">Service Health Monitor</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Live status of all Terravision microservices</p>
+              </div>
+              <button
+                onClick={fetchHealth}
+                disabled={healthLoading}
+                className="px-4 py-2 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium transition-all disabled:opacity-50"
+              >
+                {healthLoading ? '⟳ Checking...' : '↻ Refresh'}
+              </button>
+            </div>
+
+            {/* Overall Status Banner */}
+            {healthData && (
+              <div className={`p-4 rounded-xl border font-semibold text-sm flex items-center space-x-3 ${
+                healthData.overall === 'healthy'
+                  ? 'bg-emerald-950/40 border-emerald-700/40 text-emerald-400'
+                  : 'bg-amber-950/40 border-amber-700/40 text-amber-400'
+              }`}>
+                <span className={`w-2.5 h-2.5 rounded-full ${
+                  healthData.overall === 'healthy' ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}></span>
+                <span>
+                  System is <strong>{healthData.overall === 'healthy' ? 'FULLY OPERATIONAL' : 'DEGRADED'}</strong>
+                  {healthData.overall !== 'healthy' && ' — some services are offline'}
+                </span>
+              </div>
+            )}
+
+            {/* Error */}
+            {healthError && (
+              <div className="p-4 bg-red-950/40 border border-red-800/40 rounded-xl text-red-400 text-xs font-mono">
+                ✗ Failed to reach Express backend: {healthError}<br/>
+                <span className="text-red-500/70">Make sure `npm run dev` (or `node run-dev.js`) is running.</span>
+              </div>
+            )}
+
+            {/* Service Cards */}
+            {healthData && (
+              <div className="grid grid-cols-1 gap-3">
+                {healthData.services.map((svc, i) => (
+                  <div
+                    key={i}
+                    className={`p-4 rounded-xl border flex items-center justify-between ${
+                      svc.status === 'online'
+                        ? 'bg-slate-950 border-slate-800'
+                        : 'bg-red-950/20 border-red-900/40'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        svc.status === 'online' ? 'bg-emerald-400 shadow-emerald-400/50 shadow-sm' : 'bg-red-500'
+                      }`}></span>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-200">{svc.name}</div>
+                        {svc.status === 'offline' && svc.error && (
+                          <div className="text-[10px] text-red-400 font-mono mt-0.5">{svc.error}</div>
+                        )}
+                        {svc.detail && (
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            {JSON.stringify(svc.detail)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                      svc.status === 'online'
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {svc.status.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Instructions when no data yet */}
+            {!healthData && !healthError && !healthLoading && (
+              <div className="p-8 text-center text-slate-500 text-sm border border-slate-800 rounded-xl border-dashed">
+                Click <strong className="text-slate-400">↻ Refresh</strong> to check service status
+              </div>
+            )}
+
+            {/* Service map legend */}
+            <div className="border border-slate-800 rounded-xl p-4 text-xs font-mono space-y-1 text-slate-500">
+              <div className="text-slate-400 font-semibold mb-2 font-sans uppercase tracking-wider text-[10px]">Port Map</div>
+              <div>5000 → Express Backend (Node.js API proxy)</div>
+              <div>8000 → Preprocessing Service (deskew, enhance)</div>
+              <div>8001 → Extraction Service (OCR, key-value)</div>
+              <div>8002 → Validation Service (field rules)</div>
+              <div>8003 → Pipeline Orchestrator (end-to-end)</div>
+              <div>8004 → Signing / Verification Service (RSA)</div>
+            </div>
+          </div>
+        </div>
+      )}
       {activeView === 'developer' && (
         <div className="flex-1 flex flex-col">
           {/* Main Grid Layout for Developer Services */}

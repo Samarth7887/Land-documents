@@ -6,7 +6,7 @@ const http = require('http');
 router.post('/process', (req, res) => {
   const options = {
     hostname: '127.0.0.1',
-    port: 8003,
+    port: 8013,
     path: '/process' + (req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''),
     method: 'POST',
     headers: req.headers
@@ -23,7 +23,7 @@ router.post('/process', (req, res) => {
     console.error('[Node Pipeline Proxy Error]:', err.message);
     res.status(502).json({ 
       success: false, 
-      error: 'Failed to connect to Python Pipeline Orchestrator. Ensure it is running on port 8003.' 
+      error: 'Failed to connect to Python Pipeline Orchestrator. Ensure it is running on port 8013.' 
     });
   });
 });
@@ -32,7 +32,7 @@ router.post('/process', (req, res) => {
 router.get('/status/:id', (req, res) => {
   const options = {
     hostname: '127.0.0.1',
-    port: 8003,
+    port: 8013,
     path: `/status/${req.params.id}`,
     method: 'GET'
   };
@@ -53,7 +53,7 @@ router.get('/status/:id', (req, res) => {
     console.error('[Node Pipeline Status Proxy Error]:', err.message);
     res.status(502).json({ 
       success: false, 
-      error: 'Failed to connect to Python Pipeline Orchestrator. Ensure it is running on port 8003.' 
+      error: 'Failed to connect to Python Pipeline Orchestrator. Ensure it is running on port 8013.' 
     });
   });
 
