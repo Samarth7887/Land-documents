@@ -7,6 +7,7 @@ const INITIAL_QUEUE = [
     village: "Green Valley",
     documentName: "registry_record_valley_404.pdf (Page 2)",
     overallStatus: "needs_review",
+    imageUrl: "http://localhost:5000/static/clean_scan.png",
     fields: {
       owner_name: { value: "Johnathan Smith", confidence: 0.95, original_value: "Johnathan Smith" },
       survey_number: { value: "404-B / Part 2", confidence: 0.52, original_value: "404-B / Part 2", issue: "Duplicate survey number detected in Green Valley" },
@@ -425,99 +426,50 @@ export default function VerificationConsole() {
               isPanning ? "cursor-grabbing" : "cursor-grab"
             }`}
           >
-            {/* Mock physical land record scan layout */}
-            <div 
-              style={{
-                transform: `scale(${zoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
-                transformOrigin: "center center",
-                transition: isPanning ? "none" : "transform 0.15s ease-out"
-              }}
-              className="w-[480px] min-h-[640px] bg-[#fbf9f2] text-slate-800 border-2 border-[#e7e1cc] rounded-lg p-8 shadow-2xl relative flex flex-col space-y-6"
-            >
-              {/* Document Header stamp */}
-              <div className="border border-slate-400 p-4 text-center rounded relative border-dashed">
-                <div className="absolute top-2 left-2 text-[8px] text-red-700 border border-red-700/30 px-1 py-0.5 rounded font-bold uppercase tracking-widest">
-                  DEPT OF REVENUE
-                </div>
-                <h3 className="font-serif text-lg font-bold uppercase tracking-wider text-slate-800">
-                  Form VII-C Land Registry Page
-                </h3>
-                <p className="text-[9px] text-slate-500 mt-1">Village Land Administration Board Office Record</p>
-              </div>
-
-              {/* Document Fields */}
-              <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-xs font-serif leading-relaxed text-slate-800">
-                <div className="col-span-2 border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">LANDOWNER OF RECORD:</span>
-                  <span className="font-mono font-medium underline decoration-dotted text-blue-900 bg-blue-50/50 px-1">{formFields.owner_name?.value}</span>
-                </div>
-                
-                <div className="border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">SURVEY NUM:</span>
-                  <span className={`font-mono font-medium underline text-blue-900 px-1 ${getConfidenceBand(formFields.survey_number?.confidence).band === 'needs_correction' ? 'bg-red-100 text-red-900' : 'bg-blue-50/50'}`}>
-                    {formFields.survey_number?.value}
-                  </span>
-                </div>
-                
-                <div className="border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">KHATA NUM:</span>
-                  <span className="font-mono font-medium text-blue-900 bg-blue-50/50 px-1">{formFields.khasra_or_khata_number?.value}</span>
-                </div>
-
-                <div className="border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">AREA SIZE:</span>
-                  <span className={`font-mono font-medium underline text-blue-900 px-1 ${getConfidenceBand(formFields.area?.confidence).band === 'needs_correction' ? 'bg-red-100 text-red-900' : 'bg-blue-50/50'}`}>
-                    {formFields.area?.value} {formFields.area_unit?.value}
-                  </span>
-                </div>
-
-                <div className="border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">CLASSIFICATION:</span>
-                  <span className="font-mono text-blue-900">{formFields.land_classification?.value}</span>
-                </div>
-
-                <div className="border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">VILLAGE:</span>
-                  <span className="font-mono text-blue-900">{formFields.village?.value}</span>
-                </div>
-
-                <div className="border-b border-slate-300 pb-1.5 flex justify-between">
-                  <span className="font-bold">TALUK:</span>
-                  <span className="font-mono text-blue-900">{formFields.taluk?.value}</span>
-                </div>
-              </div>
-
-              {/* Bottom Stamp mock */}
-              <div className="mt-auto border-t border-slate-300 pt-6 flex justify-between items-center text-[10px] text-slate-500 font-serif">
-                <div>
-                  <div>Assigned Registry ID: {activeRecord.id}</div>
-                  <div>Processed: 2026-08-29</div>
-                  {activeRecord.document_id && (
-                    <div className="text-[9px] text-blue-900 font-mono font-bold mt-0.5">
-                      Doc ID: {activeRecord.document_id}
-                    </div>
-                  )}
-                </div>
-                
-                {/* QR code verification display if approved, otherwise show red verified stamp outline */}
-                {activeRecord.qr_code ? (
-                  <div className="flex flex-col items-center space-y-1">
+            {activeRecord.imageUrl ? (
+              <div 
+                style={{
+                  transform: `scale(${zoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+                  transformOrigin: "center center",
+                  transition: isPanning ? "none" : "transform 0.15s ease-out"
+                }}
+                className="relative flex items-center justify-center border border-slate-800 rounded-lg overflow-hidden shadow-2xl bg-slate-900"
+              >
+                <img
+                  src={activeRecord.imageUrl}
+                  alt="Registry Document Scan"
+                  className="max-w-[480px] h-auto pointer-events-none select-none"
+                />
+                {/* Floating QR verified badge if approved */}
+                {activeRecord.qr_code && (
+                  <div className="absolute bottom-4 right-4 bg-white/95 border border-slate-350 p-1.5 rounded shadow-lg flex flex-col items-center space-y-1">
                     <img 
                       src={activeRecord.qr_code} 
-                      alt="Verification QR Code" 
-                      className="w-14 h-14 border border-slate-300 p-0.5 bg-white"
+                      alt="Verification QR" 
+                      className="w-12 h-12"
                     />
-                    <span className="text-[7px] font-sans font-bold text-slate-500 uppercase tracking-widest">
-                      Scan to Verify
+                    <span className="text-[6px] font-sans font-bold text-slate-800 uppercase tracking-wider">
+                      Verified Mark
                     </span>
-                  </div>
-                ) : (
-                  <div className="w-16 h-16 rounded-full border-2 border-red-500/20 flex items-center justify-center text-center text-red-700/40 text-[8px] font-bold uppercase rotate-12 select-none">
-                    PENDING SIGN
                   </div>
                 )}
               </div>
-            </div>
+            ) : (
+              <div
+                style={{
+                  transform: `scale(${zoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+                  transformOrigin: "center center",
+                  transition: isPanning ? "none" : "transform 0.15s ease-out"
+                }}
+                className="w-[400px] h-[300px] border-2 border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center text-center p-6 bg-slate-950/40 text-slate-400"
+              >
+                <svg className="w-12 h-12 text-slate-600 mb-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375 0 11-.75 0 .375 0 01.75 0z"></path>
+                </svg>
+                <div className="font-semibold text-sm text-slate-300">No source image available</div>
+                <div className="text-xs text-slate-500 mt-1">Select a record from the queue that has an associated preprocessed document scan.</div>
+              </div>
+            )}
           </div>
         </section>
 

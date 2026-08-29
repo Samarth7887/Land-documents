@@ -15,6 +15,7 @@ const db = {
       village: "Green Valley",
       district: "Green Valley",
       overallStatus: "needs_review",
+      imageUrl: "http://localhost:5000/static/clean_scan.png",
       fields: {
         owner_name: { value: "Johnathan Smith", confidence: 0.95, original_value: "Johnathan Smith" },
         survey_number: { value: "404-B / Part 2", confidence: 0.52, original_value: "404-B / Part 2", issue: "Duplicate survey number detected in Green Valley" },
