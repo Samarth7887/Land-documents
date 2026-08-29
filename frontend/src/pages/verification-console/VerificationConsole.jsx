@@ -190,10 +190,12 @@ export default function VerificationConsole() {
       const data = await res.json()
       
       if (data.success) {
-        // Update local memory list for the queue view
+        // Update local memory list for the queue view with the returned record details (e.g. signature, document_id, qr_code)
         const updatedQueue = [...queue]
-        updatedQueue[selectedIdx].fields = formFields
-        updatedQueue[selectedIdx].overallStatus = "corrected"
+        updatedQueue[selectedIdx] = {
+          ...updatedQueue[selectedIdx],
+          ...data.record
+        }
         setQueue(updatedQueue)
         
         setMessage({ type: "success", text: `Saved ${logs.length} field corrections successfully!` })
@@ -216,7 +218,10 @@ export default function VerificationConsole() {
       
       if (data.success) {
         const updatedQueue = [...queue]
-        updatedQueue[selectedIdx].overallStatus = "approved"
+        updatedQueue[selectedIdx] = {
+          ...updatedQueue[selectedIdx],
+          ...data.record
+        }
         setQueue(updatedQueue)
         setMessage({ type: "success", text: "Record has been officially approved and logged!" })
         fetchHistory()
@@ -267,6 +272,17 @@ export default function VerificationConsole() {
           <span className="text-xs bg-blue-950 text-blue-400 border border-blue-900 px-2 py-0.5 rounded">
             Batch ID: BATCH_2026_AUG
           </span>
+
+          {/* Two-state status badge */}
+          {activeRecord.overallStatus === "approved" ? (
+            <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-medium">
+              ✓ Human-verified & signed
+            </span>
+          ) : (
+            <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-medium">
+              ⚠ AI-extracted - pending review
+            </span>
+          )}
         </div>
         
         {/* Navigation Indicator */}
@@ -476,10 +492,30 @@ export default function VerificationConsole() {
                 <div>
                   <div>Assigned Registry ID: {activeRecord.id}</div>
                   <div>Processed: 2026-08-29</div>
+                  {activeRecord.document_id && (
+                    <div className="text-[9px] text-blue-900 font-mono font-bold mt-0.5">
+                      Doc ID: {activeRecord.document_id}
+                    </div>
+                  )}
                 </div>
-                <div className="w-16 h-16 rounded-full border-2 border-red-500/20 flex items-center justify-center text-center text-red-700/40 text-[8px] font-bold uppercase rotate-12 select-none">
-                  VERIFIED STAMP
-                </div>
+                
+                {/* QR code verification display if approved, otherwise show red verified stamp outline */}
+                {activeRecord.qr_code ? (
+                  <div className="flex flex-col items-center space-y-1">
+                    <img 
+                      src={activeRecord.qr_code} 
+                      alt="Verification QR Code" 
+                      className="w-14 h-14 border border-slate-300 p-0.5 bg-white"
+                    />
+                    <span className="text-[7px] font-sans font-bold text-slate-500 uppercase tracking-widest">
+                      Scan to Verify
+                    </span>
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-full border-2 border-red-500/20 flex items-center justify-center text-center text-red-700/40 text-[8px] font-bold uppercase rotate-12 select-none">
+                    PENDING SIGN
+                  </div>
+                )}
               </div>
             </div>
           </div>

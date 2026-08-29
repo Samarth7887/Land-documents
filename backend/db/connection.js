@@ -1,6 +1,8 @@
 // Mock PostgreSQL/Supabase database memory manager
 // Simulates the schema tables, RLS policies, and audit triggers for local dev/demo safety.
 
+const http = require('http');
+
 const db = {
   users: [
     { id: "rev-clerk-001", name: "Clerk Ram", role: "clerk", district: "Green Valley" },
@@ -27,7 +29,11 @@ const db = {
         tenancy_status: { value: "Owner-cultivated", confidence: 0.90, original_value: "Owner-cultivated" },
         liabilities: { value: ["Bank Mortgage of 500,000 INR"], confidence: 0.80, original_value: ["Bank Mortgage of 500,000 INR"] },
         tax_status: { value: "Paid", confidence: 0.95, original_value: "Paid" }
-      }
+      },
+      signature: null,
+      public_key: null,
+      qr_code: null,
+      document_id: null
     }
   ],
   corrections: [],
@@ -67,6 +73,42 @@ function validateRLS(actorId, recordDistrict, action = "select") {
   throw new Error("Unauthorized role.");
 }
 
+// Fetch signature from Python service helper
+function fetchSignatureFromService(fields, verifyUrl) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({ fields, verify_url: verifyUrl });
+    const options = {
+      hostname: '127.0.0.1',
+      port: 8004,
+      path: '/sign',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', () => {
+      resolve(null); // Fallback to mock locally
+    });
+
+    req.write(payload);
+    req.end();
+  });
+}
+
 // Save corrections helper simulating DB transaction
 function saveFieldCorrections(recordId, correctionsList, actorId) {
   const record = db.records.find(r => r.id === recordId);
@@ -78,6 +120,7 @@ function saveFieldCorrections(recordId, correctionsList, actorId) {
   validateRLS(actorId, record.district, "update");
 
   const timestamp = new Date().toISOString();
+  let wasApproved = record.overallStatus === "approved";
 
   // Log to corrections table
   correctionsList.forEach(c => {
@@ -111,7 +154,23 @@ function saveFieldCorrections(recordId, correctionsList, actorId) {
   record.overallStatus = "corrected";
   record.updated_at = timestamp;
 
-  // Append-only simulation
+  // RULE 5: Invalidate old signature and QR code if edited after approval
+  if (wasApproved) {
+    record.signature = null;
+    record.public_key = null;
+    record.qr_code = null;
+    record.document_id = null;
+
+    db.audit_log.push({
+      id: `log-inv-${Math.random().toString(36).substring(2, 8)}`,
+      record_id: recordId,
+      actor_id: actorId,
+      previous_state: "approved",
+      new_state: "invalidated",
+      timestamp
+    });
+  }
+
   db.audit_log.push({
     id: `log-${Math.random().toString(36).substring(2, 8)}`,
     record_id: recordId,
@@ -125,7 +184,7 @@ function saveFieldCorrections(recordId, correctionsList, actorId) {
 }
 
 // Approve record helper simulating DB transaction
-function approveRecord(recordId, actorId) {
+async function approveRecord(recordId, actorId) {
   const record = db.records.find(r => r.id === recordId);
   if (!record) {
     throw new Error(`Record ${recordId} not found.`);
@@ -136,6 +195,27 @@ function approveRecord(recordId, actorId) {
 
   const timestamp = new Date().toISOString();
   const previousState = record.overallStatus;
+
+  // Generate unique document id
+  const docId = `doc_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+  const verifyUrl = `http://localhost:5000/verify/${docId}`;
+
+  // Call the python verification-mark microservice to sign
+  const signResult = await fetchSignatureFromService(record.fields, verifyUrl);
+
+  if (signResult && signResult.success) {
+    record.signature = signResult.signature;
+    record.public_key = signResult.public_key;
+    record.qr_code = signResult.qr_code;
+    record.document_id = docId;
+  } else {
+    // Local fallback for robust demo environments if signing microservice is not online
+    record.signature = "MOCK_RSA_PSS_SHA256_SIGNATURE_HEX_BASE64_VALUE";
+    record.public_key = "MOCK_RSA_PUBLIC_KEY_PEM";
+    record.qr_code = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="; // dummy pixel
+    record.document_id = docId;
+  }
+
   record.overallStatus = "approved";
   record.updated_at = timestamp;
 
