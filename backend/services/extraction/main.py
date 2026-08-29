@@ -18,12 +18,14 @@ def health():
 async def extract(
     file: UploadFile = File(...),
     engine: str = Query(None, description="Extraction engine: 'gemini' or 'paddleocr'"),
-    is_blurry: bool = Query(False, description="Simulate a blurry input image for fallback testing")
+    is_blurry: bool = Query(False, description="Simulate a blurry input image for fallback testing"),
+    language: str = Query("hi", description="Expected script/language of the document (e.g. 'hi', 'en')"),
+    document_type: str = Query("printed", description="Type of document content layout: 'printed' or 'handwritten'")
 ):
     """
     Accepts an uploaded preprocessed image, extracts land record fields,
     and returns a structured JSON object matching the SCHEMA.md schema,
-    along with a 'raw_ocr_text' debugging field.
+    applying optional language-specific prompt tweaks and handwriting confidence caps.
     """
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ['.png', '.jpg', '.jpeg', '.tiff', '.bmp']:
@@ -36,6 +38,9 @@ async def extract(
     if selected_engine not in ["gemini", "paddleocr"]:
         raise HTTPException(status_code=400, detail="Invalid engine. Must be 'gemini' or 'paddleocr'.")
         
+    if document_type.lower() not in ["printed", "handwritten"]:
+        raise HTTPException(status_code=400, detail="Invalid document_type. Must be 'printed' or 'handwritten'.")
+
     # Save the file temporarily
     fd, temp_path = tempfile.mkstemp(suffix=ext)
     os.close(fd)
@@ -48,10 +53,11 @@ async def extract(
         structured_data, raw_ocr_text = extract_fields(
             temp_path, 
             engine=selected_engine,
-            is_blurry=is_blurry
+            is_blurry=is_blurry,
+            language=language,
+            document_type=document_type
         )
         
-        # Format the response
         response_content = {
             **structured_data,
             "raw_ocr_text": raw_ocr_text
