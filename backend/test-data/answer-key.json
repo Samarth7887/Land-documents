@@ -1,0 +1,32 @@
+{
+  "holdout_001.png": {
+    "owner_name": "Johnathan Smith",
+    "survey_number": "404-B / Part 2",
+    "khasra_or_khata_number": "KH-88902",
+    "area": 5.75,
+    "area_unit": "Acres",
+    "village": "Green Valley",
+    "taluk": "East Taluk",
+    "district": "River District",
+    "land_classification": "Agricultural (Wet Land)",
+    "khata_type": "A",
+    "tenancy_status": "Owner-cultivated",
+    "liabilities": ["Bank Mortgage of 500,000 INR"],
+    "tax_status": "Paid"
+  },
+  "holdout_002.png": {
+    "owner_name": "Rajesh Kumar",
+    "survey_number": "202-A / Part 1",
+    "khasra_or_khata_number": "KH-55102",
+    "area": 3.50,
+    "area_unit": "Hectares",
+    "village": "Rampur",
+    "taluk": "East Taluk",
+    "district": "River District",
+    "land_classification": "Agricultural",
+    "khata_type": "A",
+    "tenancy_status": "Owner-cultivated",
+    "liabilities": [],
+    "tax_status": "Paid"
+  }
+}

@@ -1,0 +1,68 @@
+import os
+import json
+
+def cache_demo_results():
+    print("=== Terravision Demo Caching Utility ===")
+    
+    cache_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "demo_cache.json"))
+    
+    # Pre-calculated mock/pipeline outputs for immediate, network-free offline demos
+    cached_payloads = {
+      "demo_valley_404.png": {
+        "status": "success",
+        "record": {
+          "id": "rec_9011",
+          "village": "Green Valley",
+          "district": "Green Valley",
+          "overallStatus": "needs_review",
+          "fields": {
+            "owner_name": { "value": "Johnathan Smith", "confidence": 0.95, "original_value": "Johnathan Smith" },
+            "survey_number": { "value": "404-B / Part 2", "confidence": 0.52, "original_value": "404-B / Part 2", "issue": "Duplicate survey number detected in Green Valley" },
+            "khasra_or_khata_number": { "value": "KH-88902", "confidence": 0.85, "original_value": "KH-88902" },
+            "area": { "value": 55.75, "confidence": 0.95, "original_value": "55.75", "issue": "Plausible maximum size exceeded. Area 55.75 exceeds limit of 50.0" },
+            "area_unit": { "value": "Acres", "confidence": 0.98, "original_value": "Acres" },
+            "village": { "value": "Green Valley", "confidence": 0.90, "original_value": "Green Valley" },
+            "taluk": { "value": "East Taluk", "confidence": 0.85, "original_value": "East Taluk" },
+            "district": { "value": "River District", "confidence": 0.95, "original_value": "River District" },
+            "land_classification": { "value": "Agricultural (Wet Land)", "confidence": 0.92, "original_value": "Agricultural (Wet Land)" },
+            "khata_type": { "value": "A", "confidence": 0.88, "original_value": "A" },
+            "tenancy_status": { "value": "Owner-cultivated", "confidence": 0.90, "original_value": "Owner-cultivated" },
+            "liabilities": { "value": ["Bank Mortgage of 500,000 INR"], "confidence": 0.80, "original_value": ["Bank Mortgage of 500,000 INR"] },
+            "tax_status": { "value": "Paid", "confidence": 0.95, "original_value": "Paid" }
+          }
+        }
+      },
+      "demo_hill_102.png": {
+        "status": "success",
+        "record": {
+          "id": "rec_9012",
+          "village": "Sunny Hill",
+          "district": "Sunny Hill",
+          "overallStatus": "approved",
+          "fields": {
+            "owner_name": { "value": "Alice Margret", "confidence": 0.98, "original_value": "Alice Margret" },
+            "survey_number": { "value": "1024/2", "confidence": 0.92, "original_value": "1024/2" },
+            "khasra_or_khata_number": { "value": "KH-33104", "confidence": 0.94, "original_value": "KH-33104" },
+            "area": { "value": 2.50, "confidence": 0.97, "original_value": "2.50" },
+            "area_unit": { "value": "Acres", "confidence": 0.99, "original_value": "Acres" },
+            "village": { "value": "Sunny Hill", "confidence": 0.95, "original_value": "Sunny Hill" },
+            "taluk": { "value": "North Taluk", "confidence": 0.91, "original_value": "North Taluk" },
+            "district": { "value": "Valley District", "confidence": 0.96, "original_value": "Valley District" },
+            "land_classification": { "value": "Residential", "confidence": 0.94, "original_value": "Residential" },
+            "khata_type": { "value": "A", "confidence": 0.90, "original_value": "A" },
+            "tenancy_status": { "value": "Owner-cultivated", "confidence": 0.95, "original_value": "Owner-cultivated" },
+            "liabilities": { "value": [], "confidence": 0.92, "original_value": [] },
+            "tax_status": { "value": "Paid", "confidence": 0.98, "original_value": "Paid" }
+          }
+        }
+      }
+    }
+    
+    with open(cache_file_path, "w", encoding="utf-8") as f:
+        json.dump(cached_payloads, f, indent=2)
+        
+    print(f" -> Compiled offline demo results cache to: {cache_file_path}")
+    print("Demo Cache Compilation Run: PASS")
+
+if __name__ == "__main__":
+    cache_demo_results()
