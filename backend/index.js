@@ -14,6 +14,7 @@ const extractionService = require('./services/extraction');
 const validationService = require('./services/validation');
 const verificationService = require('./services/verification');
 const pipelineService = require('./services/pipeline');
+const recordsService = require('./services/records');
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -26,6 +27,7 @@ app.use('/api/extraction', extractionService.router);
 app.use('/api/validation', validationService.router);
 app.use('/api/verification', verificationService.router);
 app.use('/api/pipeline', pipelineService.router);
+app.use('/api/records', recordsService.router);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

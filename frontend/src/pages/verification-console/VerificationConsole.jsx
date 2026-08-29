@@ -82,8 +82,22 @@ export default function VerificationConsole() {
   const [zoom, setZoom] = useState(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
+  const [historyTrail, setHistoryTrail] = useState({ state_transitions: [], field_corrections: [] })
   const panStart = useRef({ x: 0, y: 0 })
   const viewerRef = useRef(null)
+
+  // Fetch the record's history trail from the backend
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/records/${activeRecord.id}/history`)
+      const data = await res.json()
+      if (data.success) {
+        setHistoryTrail(data.history)
+      }
+    } catch (err) {
+      console.warn("Could not fetch history from backend, falling back to local simulation.", err)
+    }
+  }
 
   // Reset form and overrides when active record changes
   useEffect(() => {
@@ -92,6 +106,7 @@ export default function VerificationConsole() {
     setMessage(null)
     setZoom(1)
     setPanOffset({ x: 0, y: 0 })
+    fetchHistory()
   }, [selectedIdx, activeRecord])
 
   // Helper to map confidence score to band
@@ -147,8 +162,6 @@ export default function VerificationConsole() {
   // Form Submission/Save Correction Logs
   const handleSaveCorrections = async () => {
     const logs = []
-    const reviewerId = "REV_CLERK_03"
-    const timestamp = new Date().toISOString()
     
     Object.keys(formFields).forEach((key) => {
       const current = formFields[key]
@@ -158,9 +171,7 @@ export default function VerificationConsole() {
         logs.push({
           field: key,
           original_value: original.original_value,
-          corrected_value: current.value,
-          reviewer_id: reviewerId,
-          timestamp
+          corrected_value: current.value
         })
       }
     })
@@ -170,24 +181,51 @@ export default function VerificationConsole() {
       return
     }
 
-    // Mock API call trigger
-    console.log(`[POST /records/${activeRecord.id}/correct] payload:`, logs)
-    setCorrectionLogs([...correctionLogs, ...logs])
-    
-    // Simulate updating queue memory
-    const updatedQueue = [...queue]
-    updatedQueue[selectedIdx].fields = formFields
-    setQueue(updatedQueue)
-    
-    setMessage({ type: "success", text: `Saved ${logs.length} field corrections successfully!` })
+    try {
+      const res = await fetch(`http://localhost:5000/api/records/${activeRecord.id}/correct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(logs)
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        // Update local memory list for the queue view
+        const updatedQueue = [...queue]
+        updatedQueue[selectedIdx].fields = formFields
+        updatedQueue[selectedIdx].overallStatus = "corrected"
+        setQueue(updatedQueue)
+        
+        setMessage({ type: "success", text: `Saved ${logs.length} field corrections successfully!` })
+        fetchHistory() // Refresh the logs history panel
+      } else {
+        setMessage({ type: "error", text: `Failed to save: ${data.error}` })
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: "Network error saving corrections to backend API." })
+    }
   }
 
   // Handle Approve Record
-  const handleApprove = () => {
-    const updatedQueue = [...queue]
-    updatedQueue[selectedIdx].overallStatus = "approved"
-    setQueue(updatedQueue)
-    setMessage({ type: "success", text: "Record has been officially approved and logged!" })
+  const handleApprove = async () => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/records/${activeRecord.id}/approve`, {
+        method: "POST"
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        const updatedQueue = [...queue]
+        updatedQueue[selectedIdx].overallStatus = "approved"
+        setQueue(updatedQueue)
+        setMessage({ type: "success", text: "Record has been officially approved and logged!" })
+        fetchHistory()
+      } else {
+        setMessage({ type: "error", text: `Failed to approve: ${data.error}` })
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: "Network error approving record." })
+    }
   }
 
   // Document Zoom/Pan mouse handlers
@@ -285,19 +323,48 @@ export default function VerificationConsole() {
             </div>
           </div>
           
-          {/* Quick Logs Summary */}
-          {correctionLogs.length > 0 && (
-            <div className="mt-8 border-t border-slate-800 pt-4">
-              <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Reviewer Corrections Log</h4>
-              <div className="max-h-28 overflow-y-auto text-[10px] font-mono text-slate-400 space-y-1 bg-slate-950 p-2.5 rounded-lg border border-slate-900">
-                {correctionLogs.map((log, i) => (
-                  <div key={i} className="truncate">
-                    [{log.field}]: {log.original_value} &rarr; {log.corrected_value}
+          {/* Record History / Audit Logs */}
+          <div className="mt-6 border-t border-slate-800 pt-4 flex-1 flex flex-col min-h-[160px] overflow-hidden">
+            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Record History Trail
+            </h4>
+            
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-[11px]">
+              {/* State transitions */}
+              {historyTrail.state_transitions && historyTrail.state_transitions.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] font-semibold text-slate-400">STATE TRANSITIONS:</div>
+                  <div className="space-y-1 bg-slate-900/60 p-2 rounded-lg border border-slate-900 font-mono text-[10px]">
+                    {historyTrail.state_transitions.map((log) => (
+                      <div key={log.id} className="text-slate-300">
+                        {new Date(log.timestamp).toLocaleTimeString()}: {log.previous_state || 'None'} &rarr; <span className="text-blue-400 font-bold">{log.new_state}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
+
+              {/* Field corrections */}
+              {historyTrail.field_corrections && historyTrail.field_corrections.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] font-semibold text-slate-400">FIELD CORRECTIONS:</div>
+                  <div className="space-y-1.5 bg-slate-900/60 p-2 rounded-lg border border-slate-900 font-mono text-[10px]">
+                    {historyTrail.field_corrections.map((corr) => (
+                      <div key={corr.id} className="text-slate-300 border-b border-slate-850 pb-1 last:border-0 last:pb-0">
+                        <div className="text-amber-500 font-semibold">{corr.field_name}:</div>
+                        <div className="pl-1 truncate text-slate-400 line-through">{corr.original_value}</div>
+                        <div className="pl-1 truncate text-emerald-400">&rarr; {corr.corrected_value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(!historyTrail.state_transitions?.length && !historyTrail.field_corrections?.length) && (
+                <div className="text-slate-500 text-center py-4 italic">No history trail logged.</div>
+              )}
             </div>
-          )}
+          </div>
         </aside>
 
         {/* MIDDLE COLUMN: Document Scan Viewer (Zoom/Pan) */}
