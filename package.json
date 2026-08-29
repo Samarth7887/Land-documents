@@ -1,0 +1,9 @@
+{
+  "name": "land-documents-monorepo",
+  "version": "1.0.0",
+  "description": "Monorepo for Land Records Digitization Suite",
+  "scripts": {
+    "dev": "node run-dev.js",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend"
+  }
+}
