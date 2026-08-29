@@ -1,0 +1,11 @@
+# Land Records Validation Rules Configuration
+
+area_limits:
+  min_area: 0.01
+  max_area: 50.0  # Absurdly large threshold for flag warning
+
+survey_number_patterns:
+  # Village-specific regex patterns
+  "Green Valley": "^\\d{3}-[A-Z](?:\\s*/\\s*Part\\s*\\d+)?$" # e.g. 404-B / Part 2
+  "Sunny Hill": "^\\d{4}/\\d+$" # e.g. 1024/2
+  default: "^[0-9A-Za-z\\s\\-/]+$"
