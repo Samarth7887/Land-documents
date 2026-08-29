@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import VerificationConsole from './pages/verification-console/VerificationConsole'
+import Dashboard from './pages/dashboard/Dashboard'
 
 function App() {
   const [activeView, setActiveView] = useState('verification') // default to verification console
@@ -42,6 +43,16 @@ function App() {
             Clerk Verification Console
           </button>
           <button
+            onClick={() => setActiveView('dashboard')}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              activeView === 'dashboard'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Oversight Dashboard
+          </button>
+          <button
             onClick={() => setActiveView('developer')}
             className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
               activeView === 'developer'
@@ -61,9 +72,9 @@ function App() {
       </header>
 
       {/* Main Content Area depending on Active View */}
-      {activeView === 'verification' ? (
-        <VerificationConsole />
-      ) : (
+      {activeView === 'verification' && <VerificationConsole />}
+      {activeView === 'dashboard' && <Dashboard />}
+      {activeView === 'developer' && (
         <div className="flex-1 flex flex-col">
           {/* Main Grid Layout for Developer Services */}
           <main className="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
