@@ -17,7 +17,8 @@ def health():
 @app.post("/extract")
 async def extract(
     file: UploadFile = File(...),
-    engine: str = Query(None, description="Extraction engine: 'gemini' or 'paddleocr'")
+    engine: str = Query(None, description="Extraction engine: 'gemini' or 'paddleocr'"),
+    is_blurry: bool = Query(False, description="Simulate a blurry input image for fallback testing")
 ):
     """
     Accepts an uploaded preprocessed image, extracts land record fields,
@@ -44,7 +45,11 @@ async def extract(
             shutil.copyfileobj(file.file, buffer)
             
         # Execute the extraction
-        structured_data, raw_ocr_text = extract_fields(temp_path, engine=selected_engine)
+        structured_data, raw_ocr_text = extract_fields(
+            temp_path, 
+            engine=selected_engine,
+            is_blurry=is_blurry
+        )
         
         # Format the response
         response_content = {

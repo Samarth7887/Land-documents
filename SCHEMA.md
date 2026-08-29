@@ -2,6 +2,16 @@
 
 This document defines the shared schema structure used by both the frontend and backend services to ensure consistency across extracted fields.
 
+## Confidence Bands & Thresholds
+
+Each field is extracted along with a confidence rating (float between `0.0` and `1.0`). Depending on this score, fields are classified into the following bands:
+
+| Band | Threshold | Action |
+| --- | --- | --- |
+| **`auto_approved`** | `>= 0.9` | No human intervention required. Field is saved immediately. |
+| **`needs_review`** | `0.6` to `0.89` | Flagged for quick verification by the operator. |
+| **`needs_correction`** | `< 0.6` | High risk of error/illegible field. Requires manual correction. |
+
 ## JSON Schema Definition
 
 ```json
@@ -11,60 +21,108 @@ This document defines the shared schema structure used by both the frontend and 
   "type": "object",
   "properties": {
     "owner_name": {
-      "type": "string",
-      "description": "Full name of the primary landowner/owner of record."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "survey_number": {
-      "type": "string",
-      "description": "The official survey number assigned to the parcel of land."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "khasra_or_khata_number": {
-      "type": "string",
-      "description": "The Khasra or Khata register number of the land holding."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "area": {
-      "type": "number",
-      "description": "The numeric area/size of the land parcel."
+      "type": "object",
+      "properties": {
+        "value": { "type": "number" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "area_unit": {
-      "type": "string",
-      "description": "The unit of measurement for area (e.g., Acres, Hectares, Guntha, Sq Feet)."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "village": {
-      "type": "string",
-      "description": "Village name where the land is situated."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "taluk": {
-      "type": "string",
-      "description": "Taluk/Tehsil sub-district name."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "district": {
-      "type": "string",
-      "description": "District name."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "land_classification": {
-      "type": "string",
-      "description": "Type of land use classification (e.g., Agricultural, Non-Agricultural, Residential, Wet Land)."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "khata_type": {
-      "type": ["string", "null"],
-      "enum": ["A", "B", null],
-      "description": "Khata registry classification type (A Khata, B Khata, or null)."
+      "type": "object",
+      "properties": {
+        "value": { "type": ["string", "null"], "enum": ["A", "B", null] },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "tenancy_status": {
-      "type": "string",
-      "description": "Tenancy classification (e.g., Owner-cultivated, Leased, Tenant-occupied)."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     },
     "liabilities": {
-      "type": "array",
-      "items": {
-        "type": "string"
+      "type": "object",
+      "properties": {
+        "value": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
       },
-      "description": "Array of strings listing any mortgages, loans, charges, or legal disputes active on the property."
+      "required": ["value", "confidence"]
     },
     "tax_status": {
-      "type": "string",
-      "description": "Property tax payment status (e.g., Paid, Outstanding, Exempt)."
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "required": ["value", "confidence"]
     }
   },
   "required": [
