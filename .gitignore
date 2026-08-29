@@ -25,3 +25,14 @@ build/
 *.njsproj
 *.sln
 *.sw?
+
+# Python environments and cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Test data output
+backend/test-data/output/

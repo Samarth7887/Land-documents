@@ -1,17 +1,34 @@
 const express = require('express');
 const router = express.Router();
+const http = require('http');
 
-// Placeholder for Preprocessing Service
-// Responsible for resizing, deskewing, noise reduction, and converting image formats.
-router.post('/process', async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      message: 'Preprocessing completed successfully (placeholder response)'
+// Proxy /api/preprocessing/process requests to the Python microservice at http://127.0.0.1:8000/preprocess
+router.post('/process', (req, res) => {
+  const options = {
+    hostname: '127.0.0.1',
+    port: 8000,
+    path: '/preprocess',
+    method: 'POST',
+    headers: req.headers
+  };
+
+  // Create a proxy request to forward the client's request to FastAPI
+  const proxyReq = http.request(options, (proxyRes) => {
+    // Copy headers and status code from python microservice response to client response
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
+
+  // Pipe the incoming request body (which contains the multipart image) to the proxy request
+  req.pipe(proxyReq, { end: true });
+
+  proxyReq.on('error', (err) => {
+    console.error('[Node Proxy Error]:', err.message);
+    res.status(502).json({ 
+      success: false, 
+      error: 'Failed to connect to Python Preprocessing microservice. Ensure it is running on port 8000.' 
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  });
 });
 
 module.exports = { router };
