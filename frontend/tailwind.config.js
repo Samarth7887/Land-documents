@@ -40,6 +40,9 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        success: "hsl(120, 40%, 40%)",
+        warning: "hsl(45, 80%, 45%)",
+        error: "hsl(0, 65%, 45%)",
       },
       borderRadius: {
         lg: "var(--radius)",

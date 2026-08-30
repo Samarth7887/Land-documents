@@ -1,0 +1,35 @@
+/* UI Palette and global styles for Land Documents app */
+:root {
+  /* Primary dark navy */
+  --color-primary: hsl(210, 40%, 15%);
+  /* Light neutral page background */
+  --color-bg-page: hsl(0, 0%, 96%);
+  /* White cards */
+  --color-card-bg: #ffffff;
+  /* Dark charcoal text */
+  --color-text: hsl(210, 10%, 20%);
+  /* Muted teal accent */
+  --color-accent: hsl(180, 30%, 45%);
+  /* Success green */
+  --color-success: hsl(120, 40%, 40%);
+  /* Warning amber */
+  --color-warning: hsl(45, 80%, 45%);
+  /* Error red */
+  --color-error: hsl(0, 65%, 45%);
+}
+
+/* Global resets and utilities */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background-color: var(--color-bg-page); color: var(--color-text); }
+.flex-center { display: flex; align-items: center; justify-content: center; }
+.text-primary { color: var(--color-primary); }
+.bg-primary { background-color: var(--color-primary); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-error { color: var(--color-error); }
+.border-primary { border-color: var(--color-primary); }
+.card { background-color: var(--color-card-bg); border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1rem; }
+.badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600; }
+/* Additional utilities for layout */
+.bg-color-bg-page { background-color: var(--color-bg-page); }
+.text-color-text { color: var(--color-text); }

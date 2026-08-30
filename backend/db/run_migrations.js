@@ -24,8 +24,10 @@ async function runMigrations() {
       '001_init.sql',
       '002_supabase_schema.sql',
       '003_completions.sql',
-      '004_job_doc_link.sql'
+      '004_job_doc_link.sql',
+      '005_verifications_table.sql'
     ];
+
 
     for (const file of migrationFiles) {
       const filePath = path.join(__dirname, 'migrations', file);

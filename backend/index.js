@@ -97,6 +97,11 @@ app.use('/api/documents', documentsService.router);
 // Alias /api/jobs → documents router handles /jobs/:id and /jobs/:id/results
 app.use('/api', documentsService.router);
 
+// Public verification API (no auth required) – delegates to records router
+// which exposes GET /public-verify/:verificationId
+app.use('/api/public-verify', recordsService.router);
+
+
 // Public verification landing page: GET /verify/:document_id
 app.get('/verify/:document_id', async (req, res) => {
   const docId = req.params.document_id;

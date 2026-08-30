@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const http = require('http');
+const asyncHandler = require('../utils/asyncHandler');
+const AppError = require('../utils/AppError');
+const logger = require('../utils/logger');
 const { 
   saveFieldCorrections, 
   approveRecord, 
   getRecordHistory, 
   getRecords, 
   getRecordById,
+  getVerificationByDocId,
   pool,
   checkDbConnection
 } = require('../db/connection');
@@ -14,20 +18,27 @@ const {
 const MOCK_ACTOR_ID = "rev-clerk-001"; 
 
 // Get all records in the database: GET /api/records
-router.get('/', async (req, res) => {
+router.get('/', asyncHandler(async (req, res) => {
+  const records = await getRecords();
+  return res.json({
+    success: true,
+    records
+  });
+}));
+
+// Get specific record by ID
+router.get('/:id', async (req, res) => {
+  const recordId = req.params.id;
   try {
-    const records = await getRecords();
-    return res.json({
-      success: true,
-      records
-    });
+    const record = await getRecordById(recordId);
+    if (!record) {
+      return res.status(404).json({ success: false, error: 'Record not found' });
+    }
+    return res.json({ success: true, record });
   } catch (error) {
-    console.error("[Get Records Endpoint Error]:", error.message);
+    console.error('[Get Record By ID Endpoint Error]:', error.message);
     const code = error.message === "Database unavailable" ? 503 : 500;
-    return res.status(code).json({
-      success: false,
-      error: error.message
-    });
+    return res.status(code).json({ success: false, error: error.message });
   }
 });
 
@@ -210,6 +221,80 @@ router.get('/verify-id/:document_id', async (req, res) => {
       message: err.message
     });
   }
+});
+
+// 5. Public verification endpoint: GET /records/public-verify/:verificationId
+// Returns sanitised public data + live signature re-check.
+// NEVER returns the full extracted_fields object to avoid leaking PII at scale.
+router.get('/public-verify/:verificationId', async (req, res) => {
+  const { verificationId } = req.params;
+
+  let verificationRow;
+  try {
+    verificationRow = await getVerificationByDocId(verificationId);
+  } catch (err) {
+    const code = err.message === 'Database unavailable' ? 503 : 500;
+    return res.status(code).json({ success: false, error: err.message });
+  }
+
+  if (!verificationRow) {
+    return res.status(404).json({
+      success: false,
+      verified: false,
+      status: 'NOT_FOUND',
+      message: 'No verified record found for this ID.'
+    });
+  }
+
+  // Re-validate signature with the Python microservice
+  let signatureValid = false;
+  let signingServiceError = null;
+  try {
+    signatureValid = await verifySignatureWithService(
+      verificationRow.fields,
+      verificationRow.signature
+    );
+  } catch (err) {
+    signingServiceError = err.message;
+  }
+
+  // If the signing service itself is offline, surface that as an explicit error
+  if (signingServiceError) {
+    return res.status(503).json({
+      success: false,
+      verified: false,
+      status: 'SERVICE_UNAVAILABLE',
+      message: `Signature verification service unavailable: ${signingServiceError}`
+    });
+  }
+
+  // Build a sanitised record summary (only non-sensitive cadastral fields)
+  const fields = verificationRow.fields || {};
+  const summary = {};
+  const ALLOWED_PUBLIC_FIELDS = [
+    'survey_number', 'village', 'taluk', 'district', 'area', 'area_unit', 'land_type'
+  ];
+  for (const key of ALLOWED_PUBLIC_FIELDS) {
+    if (fields[key] !== undefined) {
+      const f = fields[key];
+      summary[key] = typeof f === 'object' && f !== null && 'value' in f ? f.value : f;
+    }
+  }
+
+  return res.json({
+    success: true,
+    verified: signatureValid,
+    status: signatureValid ? 'VERIFIED' : 'TAMPERED',
+    verificationId: verificationRow.verification_id,
+    recordId: verificationRow.record_id,
+    verifiedAt: verificationRow.verified_at,
+    recordStatus: verificationRow.status,
+    qrCode: verificationRow.qr_code,
+    summary,
+    message: signatureValid
+      ? 'Record is authentic. Signature verified against the signed canonical hash.'
+      : 'Signature mismatch – the record has been altered since it was signed.'
+  });
 });
 
 module.exports = { router };

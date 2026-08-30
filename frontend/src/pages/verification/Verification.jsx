@@ -318,7 +318,7 @@ export default function Verification() {
                       <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Verification QR Link</div>
                       <div className="bg-white p-2 rounded-lg inline-block">
                         <img 
-                          src={`data:image/png;base64,${selectedRecord.qr_code}`} 
+                          src={selectedRecord.qr_code}
                           alt="Verification QR Code" 
                           className="w-28 h-28"
                         />
@@ -326,6 +326,17 @@ export default function Verification() {
                       <div className="text-[9px] text-slate-400 font-mono truncate max-w-full">
                         {selectedRecord.document_id}
                       </div>
+                      {selectedRecord.document_id && (
+                        <a
+                          href={`?view=public-verify`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-blue-400 hover:text-blue-300 underline"
+                          title={selectedRecord.document_id}
+                        >
+                          Open Public Verification Page ↗
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>
@@ -384,6 +395,16 @@ export default function Verification() {
             {verificationError && (
               <div className="p-4 bg-red-950/20 border border-red-900/40 rounded-xl text-xs text-red-400 font-mono">
                 Error: {verificationError}
+              </div>
+            )}
+
+            {verificationResult?.status === 'SERVICE_UNAVAILABLE' && (
+              <div className="p-4 bg-orange-950/20 border border-orange-900/40 rounded-xl text-xs text-orange-400">
+                <strong>Signing service offline:</strong> {verificationResult.message}
+                <br />
+                <span className="text-[10px] text-orange-500/70 mt-1 block">
+                  Signature verification is temporarily unavailable. This is not an indication the record is invalid.
+                </span>
               </div>
             )}
 

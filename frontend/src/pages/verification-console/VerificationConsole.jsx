@@ -1,98 +1,37 @@
 import { useState, useRef, useEffect } from 'react'
+import StatusBadge from '../../components/StatusBadge'
 
-// Mock database queue of pending land records
-const INITIAL_QUEUE = [
-  {
-    id: "rec_9011",
-    village: "Green Valley",
-    documentName: "registry_record_valley_404.pdf (Page 2)",
-    overallStatus: "needs_review",
-    imageUrl: "http://localhost:5000/static/clean_scan.png",
-    fields: {
-      owner_name: { value: "Johnathan Smith", confidence: 0.95, original_value: "Johnathan Smith" },
-      survey_number: { value: "404-B / Part 2", confidence: 0.52, original_value: "404-B / Part 2", issue: "Duplicate survey number detected in Green Valley" },
-      khasra_or_khata_number: { value: "KH-88902", confidence: 0.85, original_value: "KH-88902" },
-      area: { value: 55.75, confidence: 0.95, original_value: "55.75", issue: "Plausible maximum size exceeded. Area 55.75 exceeds limit of 50.0" },
-      area_unit: { value: "Acres", confidence: 0.98, original_value: "Acres" },
-      village: { value: "Green Valley", confidence: 0.90, original_value: "Green Valley" },
-      taluk: { value: "East Taluk", confidence: 0.85, original_value: "East Taluk" },
-      district: { value: "River District", confidence: 0.95, original_value: "River District" },
-      land_classification: { value: "Agricultural (Wet Land)", confidence: 0.92, original_value: "Agricultural (Wet Land)" },
-      khata_type: { value: "A", confidence: 0.88, original_value: "A" },
-      tenancy_status: { value: "Owner-cultivated", confidence: 0.90, original_value: "Owner-cultivated" },
-      liabilities: { value: ["Bank Mortgage of 500,000 INR"], confidence: 0.80, original_value: ["Bank Mortgage of 500,000 INR"] },
-      tax_status: { value: "Paid", confidence: 0.95, original_value: "Paid" }
-    }
-  },
-  {
-    id: "rec_9012",
-    village: "Sunny Hill",
-    documentName: "registry_record_hill_102.pdf (Page 4)",
-    overallStatus: "auto_approved",
-    fields: {
-      owner_name: { value: "Alice Margret", confidence: 0.98, original_value: "Alice Margret" },
-      survey_number: { value: "1024/2", confidence: 0.92, original_value: "1024/2" },
-      khasra_or_khata_number: { value: "KH-33104", confidence: 0.94, original_value: "KH-33104" },
-      area: { value: 2.50, confidence: 0.97, original_value: "2.50" },
-      area_unit: { value: "Acres", confidence: 0.99, original_value: "Acres" },
-      village: { value: "Sunny Hill", confidence: 0.95, original_value: "Sunny Hill" },
-      taluk: { value: "North Taluk", confidence: 0.91, original_value: "North Taluk" },
-      district: { value: "Valley District", confidence: 0.96, original_value: "Valley District" },
-      land_classification: { value: "Residential", confidence: 0.94, original_value: "Residential" },
-      khata_type: { value: "A", confidence: 0.90, original_value: "A" },
-      tenancy_status: { value: "Owner-cultivated", confidence: 0.95, original_value: "Owner-cultivated" },
-      liabilities: { value: [], confidence: 0.92, original_value: [] },
-      tax_status: { value: "Paid", confidence: 0.98, original_value: "Paid" }
-    }
-  },
-  {
-    id: "rec_9013",
-    village: "River Dale",
-    documentName: "blurry_scan_bundle_009.pdf (Page 1)",
-    overallStatus: "needs_correction",
-    fields: {
-      owner_name: { value: "M...k D...n", confidence: 0.35, original_value: "M...k D...n", issue: "Illegible text detected" },
-      survey_number: { value: "Unknown", confidence: 0.35, original_value: "Unknown", issue: "Unrecognized survey sequence" },
-      khasra_or_khata_number: { value: "KH-90", confidence: 0.45, original_value: "KH-90", issue: "Faint ink - high ambiguity" },
-      area: { value: 0.00, confidence: 0.30, original_value: "0.00", issue: "Area must be a positive number" },
-      area_unit: { value: "Hectares", confidence: 0.85, original_value: "Hectares" },
-      village: { value: "River Dale", confidence: 0.90, original_value: "River Dale" },
-      taluk: { value: "West Taluk", confidence: 0.88, original_value: "West Taluk" },
-      district: { value: "Coast District", confidence: 0.94, original_value: "Coast District" },
-      land_classification: { value: "Wet Land", confidence: 0.82, original_value: "Wet Land" },
-      khata_type: { value: null, confidence: 0.50, original_value: null, issue: "Khata verification failed" },
-      tenancy_status: { value: "Leased", confidence: 0.87, original_value: "Leased" },
-      liabilities: { value: [], confidence: 0.80, original_value: [] },
-      tax_status: { value: "Outstanding", confidence: 0.92, original_value: "Outstanding" }
-    }
-  }
-]
+
 
 export default function VerificationConsole() {
-  const [queue, setQueue] = useState(INITIAL_QUEUE)
+  const [queue, setQueue] = useState([])
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [dbError, setDbError] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   const fetchRecords = async () => {
+    setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/records')
+      const res = await fetch('http://localhost:5000/api/records');
       if (res.status === 503) {
-        setDbError(true)
-        setQueue([])
-        return
+        setDbError(true);
+        setQueue([]);
+        return;
       }
-      const data = await res.json()
+      const data = await res.json();
       if (data.success && data.records) {
-        setQueue(data.records)
-        setDbError(false)
+        setQueue(data.records);
+        setDbError(false);
       } else {
-        setDbError(true)
-        setQueue([])
+        setDbError(true);
+        setQueue([]);
       }
     } catch (err) {
-      console.error("Could not fetch records from backend:", err)
-      setDbError(true)
-      setQueue([])
+      console.error("Could not fetch records from backend:", err);
+      setDbError(true);
+      setQueue([]);
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -160,7 +99,28 @@ export default function VerificationConsole() {
     )
   }
 
-  // Helper to map confidence score to band
+  if (isLoading) {
+  return (
+    <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
+      <span className="text-gray-400">Loading records…</span>
+    </div>
+  );
+}
+
+if (!queue.length) {
+  return (
+    <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
+      <span className="text-gray-400">No documents require review.</span>
+    </div>
+  );
+}
+  return (
+    <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
+      <span className="text-gray-400">Loading records…</span>
+    </div>
+  )
+}
+
   const getConfidenceBand = (score) => {
     if (score >= 0.9) return { label: "Auto Approved", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", band: "auto_approved" }
     if (score >= 0.6) return { label: "Needs Review", color: "bg-amber-500/10 text-amber-500 border-amber-500/20", band: "needs_review" }

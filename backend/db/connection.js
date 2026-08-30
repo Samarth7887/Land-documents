@@ -52,9 +52,11 @@ async function validateRLS(client, actorId, recordDistrict) {
   throw new Error("Unauthorized role.");
 }
 
-// Fetch signature from Python service helper
+// Fetch signature from Python signing microservice.
+// IMPORTANT: This function REJECTS (throws) if the service is unreachable or
+// returns an error.  The approval flow must never store a fake/mock signature.
 function fetchSignatureFromService(fields, verifyUrl) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const payload = JSON.stringify({ fields, verify_url: verifyUrl });
     const options = {
       hostname: '127.0.0.1',
@@ -72,15 +74,24 @@ function fetchSignatureFromService(fields, verifyUrl) {
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         try {
-          resolve(JSON.parse(data));
+          const parsed = JSON.parse(data);
+          if (!parsed.success || !parsed.signature) {
+            return reject(new Error('Signing service returned an error or empty signature.'));
+          }
+          resolve(parsed);
         } catch (e) {
-          resolve(null);
+          reject(new Error('Signing service returned non-JSON response.'));
         }
       });
     });
 
-    req.on('error', () => {
-      resolve(null);
+    req.on('error', (err) => {
+      reject(new Error(`Signing service unavailable: ${err.message}`));
+    });
+
+    req.setTimeout(8000, () => {
+      req.destroy();
+      reject(new Error('Signing service timed out after 8 s.'));
     });
 
     req.write(payload);
@@ -205,7 +216,9 @@ async function saveFieldCorrections(recordId, correctionsList, actorId) {
   }
 }
 
-// Approve record helper using DB transaction
+// Approve record helper using DB transaction.
+// SECURITY: If the signing microservice is unavailable the entire transaction
+// is rolled back and an error is returned.  Fake signatures are never stored.
 async function approveRecord(recordId, actorId) {
   const isOnline = await checkDbConnection();
   if (!isOnline) throw new Error("Database unavailable");
@@ -225,29 +238,42 @@ async function approveRecord(recordId, actorId) {
     await validateRLS(client, actorId, record.district);
 
     const previousState = record.status;
-    const docId = `doc_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-    const verifyUrl = `http://localhost:5000/verify/${docId}`;
 
-    // Call signing service
-    const signResult = await fetchSignatureFromService(record.extracted_fields, verifyUrl);
+    // Generate a stable public document ID using crypto UUID
+    const { randomUUID } = require('crypto');
+    const verificationUUID = randomUUID();
+    const docId = verificationUUID; // public-facing verification ID
+    const verifyUrl = `${process.env.PUBLIC_BASE_URL || 'http://localhost:5176'}/public-verify/${docId}`;
 
-    let signature = "MOCK_RSA_PSS_SHA256_SIGNATURE_HEX_BASE64_VALUE";
-    let public_key = "MOCK_RSA_PUBLIC_KEY_PEM";
-    let qr_code = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-
-    if (signResult && signResult.success) {
-      signature = signResult.signature;
-      public_key = signResult.public_key;
-      qr_code = signResult.qr_code;
+    // Call signing service – throws if unavailable or returns bad data
+    let signResult;
+    try {
+      signResult = await fetchSignatureFromService(record.extracted_fields, verifyUrl);
+    } catch (signingErr) {
+      throw new Error(`Signing service error: ${signingErr.message}. Approval aborted – no fake signature will be stored.`);
     }
 
-    // Update records row status to approved and store signature blocks
+    const { signature, public_key, qr_code } = signResult;
+
+    // Update records row status to approved and store real signature blocks
     await client.query(`
       UPDATE records 
       SET status = 'approved', signature = $1, public_key = $2, 
           qr_code = $3, document_id_code = $4, updated_at = NOW()
       WHERE id = $5
     `, [signature, public_key, qr_code, docId, recordId]);
+
+    // Insert dedicated verifications row for the public verification page
+    await client.query(`
+      INSERT INTO verifications (record_id, verification_id, signature, public_key, qr_code)
+      VALUES ($1, $2::uuid, $3, $4, $5)
+      ON CONFLICT (record_id) DO UPDATE
+        SET verification_id = EXCLUDED.verification_id,
+            signature       = EXCLUDED.signature,
+            public_key      = EXCLUDED.public_key,
+            qr_code         = EXCLUDED.qr_code,
+            verified_at     = NOW()
+    `, [recordId, verificationUUID, signature, public_key, qr_code]);
 
     // Insert into approvals
     await client.query(`
@@ -270,6 +296,29 @@ async function approveRecord(recordId, actorId) {
   } finally {
     client.release();
   }
+}
+
+// Look up a verification by its public UUID for the public verification page
+async function getVerificationByDocId(verificationId) {
+  const isOnline = await checkDbConnection();
+  if (!isOnline) throw new Error("Database unavailable");
+
+  const res = await pool.query(`
+    SELECT
+      v.verification_id,
+      v.signature,
+      v.public_key,
+      v.qr_code,
+      v.verified_at,
+      r.id          AS record_id,
+      r.status,
+      r.district,
+      r.extracted_fields AS fields
+    FROM verifications v
+    JOIN records r ON r.id = v.record_id
+    WHERE v.verification_id = $1::uuid
+  `, [verificationId]);
+  return res.rows[0] || null;
 }
 
 // Retrieve audit logs + corrections combined trail
@@ -305,5 +354,6 @@ module.exports = {
   saveFieldCorrections,
   approveRecord,
   getRecordHistory,
+  getVerificationByDocId,
   validateRLS
 };
