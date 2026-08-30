@@ -2,12 +2,11 @@ import { useState, useRef, useCallback } from 'react'
 
 // Maps backend progress message keywords → step index (0-based)
 const STEPS = [
-  { label: 'Uploading',              keywords: ['upload', 'initialized', 'pending'] },
-  { label: 'Processing document',    keywords: ['splitting', 'split', 'processing document'] },
-  { label: 'Classifying pages',      keywords: ['classif'] },
-  { label: 'Extracting information', keywords: ['extract', 'batching', 'batch'] },
-  { label: 'Validating records',     keywords: ['validat'] },
-  { label: 'Finalizing records',     keywords: ['merging', 'merge', 'complete', 'finaliz'] },
+  { label: 'Upload',            keywords: ['upload', 'initialized', 'pending'] },
+  { label: 'Page processing',   keywords: ['splitting', 'split', 'processing document', 'classif'] },
+  { label: 'AI extraction',     keywords: ['extract', 'batching', 'batch'] },
+  { label: 'Validation',        keywords: ['validat'] },
+  { label: 'Record creation',   keywords: ['merging', 'merge', 'complete', 'finaliz'] },
 ]
 
 function inferStep(message = '', status = '') {
@@ -21,7 +20,7 @@ function inferStep(message = '', status = '') {
 
 const POLL_INTERVAL_MS = 1500
 
-export default function DocumentUpload() {
+export default function DocumentUpload({ role = 'clerk', onViewChange }) {
   // Upload state
   const [file, setFile] = useState(null)
   const [engine, setEngine] = useState('gemini')
@@ -39,7 +38,7 @@ export default function DocumentUpload() {
 
   const pollRef = useRef(null)
 
-  // ── File selection ──────────────────────────────────────────────
+  // File selection
   function handleFileChange(e) {
     const picked = e.target.files?.[0]
     if (picked) selectFile(picked)
@@ -47,8 +46,9 @@ export default function DocumentUpload() {
 
   function selectFile(f) {
     const ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'))
-    if (!['.pdf', '.tiff', '.tif', '.zip'].includes(ext)) {
-      setErrorMsg(`Unsupported file type "${ext}". Please upload a PDF, TIFF, or ZIP.`)
+    const allowed = ['.pdf', '.tiff', '.tif', '.zip', '.jpg', '.jpeg', '.png']
+    if (!allowed.includes(ext)) {
+      setErrorMsg(`Unsupported file type "${ext}". Please upload a PDF, image, or ZIP.`)
       return
     }
     setFile(f)
@@ -67,7 +67,7 @@ export default function DocumentUpload() {
     if (dropped) selectFile(dropped)
   }
 
-  // ── Polling ─────────────────────────────────────────────────────
+  // Polling
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current)
@@ -79,7 +79,7 @@ export default function DocumentUpload() {
     stopPolling()
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/jobs/${id}`)
+        const res = await fetch(`http://localhost:5000/api/documents/jobs/${id}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
 
@@ -89,8 +89,7 @@ export default function DocumentUpload() {
 
         if (data.status === 'completed') {
           stopPolling()
-          // Fetch full results
-          const rRes = await fetch(`http://localhost:5000/api/jobs/${id}/results`)
+          const rRes = await fetch(`http://localhost:5000/api/documents/jobs/${id}/results`)
           const rData = await rRes.json()
           setResults(rData.results)
           setPhase('done')
@@ -107,7 +106,7 @@ export default function DocumentUpload() {
     }, POLL_INTERVAL_MS)
   }, [stopPolling])
 
-  // ── Submit ──────────────────────────────────────────────────────
+  // Submit
   async function handleSubmit() {
     if (!file) return
     stopPolling()
@@ -158,44 +157,53 @@ export default function DocumentUpload() {
     setResults(null)
     setErrorMsg(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    onViewChange('documents')
   }
 
-  // ── Render helpers ──────────────────────────────────────────────
   const isRunning = phase === 'uploading' || phase === 'processing'
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 text-slate-100">
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Header */}
-        <div>
-          <h2 className="text-xl font-bold text-slate-100">Document Processing Pipeline</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Upload a land record PDF to run the full split → classify → extract → validate pipeline.
-          </p>
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div>
+            <h2 className="text-xl font-bold">Upload Document</h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Submit scanned land register files to run AI extraction and validation.
+            </p>
+          </div>
+          <button
+            onClick={() => onViewChange('documents')}
+            className="px-3 py-1.5 bg-slate-850 hover:bg-slate-800 text-xs font-semibold rounded text-slate-300 border border-slate-800 transition-colors"
+          >
+            ← Back to Documents
+          </button>
         </div>
 
         {/* Upload panel — hidden when running or done */}
         {(phase === 'idle' || phase === 'failed') && (
           <div className="space-y-4">
-            {/* Drop zone */}
+            
+            {/* Drag & Drop Zone */}
             <div
               onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
               onDragLeave={() => setDragging(false)}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition-all
+              className={`border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all
                 ${dragging
-                  ? 'border-blue-500 bg-blue-500/5'
+                  ? 'border-indigo-500 bg-indigo-500/5'
                   : file
                     ? 'border-emerald-600/50 bg-emerald-950/20'
-                    : 'border-slate-700 bg-slate-950/40 hover:border-slate-500 hover:bg-slate-900/60'
+                    : 'border-slate-800 bg-slate-950/40 hover:border-slate-700 hover:bg-slate-900/60'
                 }`}
             >
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.tiff,.tif,.zip"
+                accept=".pdf,.tiff,.tif,.zip,.jpg,.jpeg,.png"
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -203,70 +211,69 @@ export default function DocumentUpload() {
                 <>
                   <div className="text-3xl mb-2">📄</div>
                   <div className="text-sm font-semibold text-emerald-400">{file.name}</div>
-                  <div className="text-xs text-slate-500 mt-1">{(file.size / 1024).toFixed(1)} KB · Click to change</div>
+                  <div className="text-xs text-slate-500 mt-1">{(file.size / 1024).toFixed(1)} KB · Click or drag to change</div>
                 </>
               ) : (
                 <>
                   <div className="text-3xl mb-3 opacity-40">⬆</div>
-                  <div className="text-sm text-slate-300 font-medium">Drop a PDF here, or click to browse</div>
-                  <div className="text-xs text-slate-500 mt-1">Supports .pdf, .tiff, .zip — max 50 MB</div>
+                  <div className="text-sm text-slate-300 font-medium">Drag and drop file here, or click to browse</div>
+                  <div className="text-xs text-slate-500 mt-1">Supports PDF, TIFF, ZIP and images up to 50 MB</div>
                 </>
               )}
             </div>
 
-            {/* Engine selector */}
-            <div className="flex items-center space-x-4">
-              <span className="text-xs text-slate-400 font-medium">Extraction Engine:</span>
-              {['gemini', 'paddleocr'].map((e) => (
-                <button
-                  key={e}
-                  onClick={() => setEngine(e)}
-                  className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all border ${
-                    engine === e
-                      ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                      : 'border-slate-700 text-slate-400 hover:border-slate-500'
-                  }`}
-                >
-                  {e === 'gemini' ? '✦ Gemini Vision' : '🔠 PaddleOCR'}
-                </button>
-              ))}
-              {engine === 'gemini' && (
-                <span className="text-[10px] text-amber-500 font-mono">Requires GEMINI_API_KEY env var</span>
-              )}
-            </div>
+            {/* Advanced Engine Configuration - visible only to Admin */}
+            {role === 'admin' && (
+              <div className="p-4 bg-slate-950 border border-slate-850 rounded-2xl flex items-center space-x-4">
+                <span className="text-xs text-slate-400 font-medium">Advanced Engine Configuration:</span>
+                {['gemini', 'paddleocr'].map((e) => (
+                  <button
+                    key={e}
+                    onClick={() => setEngine(e)}
+                    className={`px-3 py-1 text-xs rounded font-medium transition-all border ${
+                      engine === e
+                        ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300'
+                        : 'border-slate-850 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    {e === 'gemini' ? '✦ Gemini Vision' : '🔠 PaddleOCR'}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* Error */}
+            {/* Error Message */}
             {errorMsg && (
-              <div className="p-4 bg-red-950/50 border border-red-800/50 rounded-xl text-xs font-mono text-red-400 whitespace-pre-wrap">
+              <div className="p-4 bg-red-950/20 border border-red-900/40 rounded-xl text-xs font-mono text-red-400">
                 ✗ {errorMsg}
               </div>
             )}
 
-            {/* Submit */}
+            {/* Upload Button */}
             <button
               onClick={handleSubmit}
               disabled={!file}
-              className="w-full py-3 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow-lg shadow-blue-600/20 transition-all"
+              className="w-full py-3 text-sm font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow-lg transition-all"
             >
-              Start Processing Pipeline →
+              Upload & Process
             </button>
           </div>
         )}
 
-        {/* Progress screen — shown when running or done */}
+        {/* Processing Screen — shown when running or done */}
         {(isRunning || phase === 'done') && (
           <div className="space-y-6">
 
-            {/* File badge */}
-            <div className="flex items-center space-x-3 px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-xs">
+            {/* File info banner */}
+            <div className="flex items-center space-x-3 px-4 py-3 bg-slate-950 border border-slate-850 rounded-xl text-xs">
               <span className="text-slate-400">📄</span>
-              <span className="text-slate-300 font-medium">{file?.name}</span>
+              <span className="text-slate-200 font-bold max-w-md truncate">{file?.name}</span>
               {jobId && (
-                <span className="ml-auto font-mono text-slate-500 text-[10px]">job: {jobId.slice(0, 12)}…</span>
+                <span className="ml-auto font-mono text-slate-500 text-[10px]">Job ID: {jobId}</span>
               )}
             </div>
 
-            {/* Step indicators */}
+            {/* Processing pipeline */}
             <div className="space-y-2">
               {STEPS.map((step, i) => {
                 const isDone = phase === 'done' ? true : i < currentStep
@@ -276,29 +283,28 @@ export default function DocumentUpload() {
                 return (
                   <div key={i} className={`flex items-center space-x-3 px-4 py-3 rounded-xl border transition-all ${
                     isDone
-                      ? 'bg-emerald-950/30 border-emerald-800/30'
+                      ? 'bg-emerald-950/20 border-emerald-900/20 text-emerald-300'
                       : isActive
-                        ? 'bg-blue-950/40 border-blue-700/40 shadow-blue-500/5 shadow-md'
-                        : 'bg-slate-950/60 border-slate-800/50 opacity-50'
+                        ? 'bg-indigo-950/30 border-indigo-850 text-indigo-300'
+                        : 'bg-slate-955 border-slate-850 opacity-40'
                   }`}>
-                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
                       {isDone ? (
                         <span className="text-emerald-400">✓</span>
                       ) : isActive ? (
-                        <span className="animate-spin text-blue-400">⟳</span>
+                        <span className="animate-spin text-indigo-400">⟳</span>
                       ) : (
-                        <span className="text-slate-600">{i + 1}</span>
+                        <span className="text-slate-600 font-mono">-</span>
                       )}
                     </span>
-                    <span className={`text-sm font-medium ${
-                      isDone ? 'text-emerald-300' : isActive ? 'text-blue-300' : 'text-slate-500'
-                    }`}>
-                      {step.label}
-                    </span>
-                    {isActive && statusMessage && (
-                      <span className="ml-auto text-[10px] font-mono text-blue-400/80 truncate max-w-xs">
-                        {statusMessage}
+                    <span className="text-sm font-semibold">{step.label}</span>
+                    {isActive && (
+                      <span className="ml-auto text-[10px] bg-indigo-500/10 px-2 py-0.5 rounded font-mono uppercase tracking-wider font-bold">
+                        active
                       </span>
+                    )}
+                    {isDone && (
+                      <span className="ml-auto text-emerald-400 text-xs font-bold font-mono">✓</span>
                     )}
                   </div>
                 )
@@ -306,54 +312,36 @@ export default function DocumentUpload() {
             </div>
 
             {/* Progress bar */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-[10px] font-mono text-slate-500">
+            <div className="space-y-1.5 p-4 bg-slate-950 border border-slate-850 rounded-xl">
+              <div className="flex justify-between text-[10px] font-mono text-slate-400">
                 <span>{statusMessage || 'Processing…'}</span>
-                <span>{progress}%</span>
+                <span className="font-bold text-white">{progress}%</span>
               </div>
-              <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                  className="h-full bg-indigo-500 rounded-full transition-all duration-500"
                   style={{ width: `${progress}%` }}
                 />
               </div>
             </div>
 
-            {/* Results table — shown when done */}
+            {/* Done Screen / Extracted Records */}
             {phase === 'done' && results && (
-              <div className="space-y-4">
+              <div className="space-y-4 pt-4 border-t border-slate-800">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-slate-200">
-                    Extracted Records
+                  <h3 className="text-sm font-bold text-white">
+                    Digitized Land Records
                     <span className="ml-2 text-xs font-normal text-slate-500">
                       ({results.records?.length ?? 0} record{results.records?.length !== 1 ? 's' : ''})
                     </span>
                   </h3>
                   <button
                     onClick={handleReset}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-all"
+                    className="text-xs px-3 py-1.5 bg-slate-850 hover:bg-slate-850 text-slate-350 font-semibold rounded border border-slate-800 transition-colors"
                   >
-                    ↩ Upload another
+                    View Documents Workspace
                   </button>
                 </div>
-
-                {/* Discarded duplicates log */}
-                {results.discarded_logs?.length > 0 && (
-                  <div className="p-3 bg-amber-950/30 border border-amber-800/30 rounded-xl space-y-1">
-                    <div className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Duplicates Merged</div>
-                    {results.discarded_logs.map((log, i) => (
-                      <div key={i} className="text-[10px] text-amber-300/70 font-mono">{log}</div>
-                    ))}
-                  </div>
-                )}
-
-                {/* No records found */}
-                {(!results.records || results.records.length === 0) && (
-                  <div className="p-6 text-center text-slate-500 text-sm border border-slate-800 rounded-xl border-dashed">
-                    No record entries were classified in this document.
-                    <div className="text-xs mt-1 text-slate-600">The pipeline classified all pages as cover_page, mutation_log, or blank.</div>
-                  </div>
-                )}
 
                 {/* Record cards */}
                 {results.records?.map((item, i) => {
@@ -366,108 +354,50 @@ export default function DocumentUpload() {
                       key={i}
                       className={`rounded-2xl border p-5 space-y-4 ${
                         isValid
-                          ? 'bg-slate-950 border-slate-800'
-                          : 'bg-amber-950/10 border-amber-800/30'
+                          ? 'bg-slate-950 border-slate-850'
+                          : 'bg-amber-950/10 border-amber-900/20'
                       }`}
                     >
-                      {/* Card header */}
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="text-xs text-slate-500 font-mono">Page {item.page_number}</div>
-                          <div className="text-base font-bold text-slate-100 mt-0.5">
-                            {rec.owner_name?.value ?? '—'}
-                          </div>
-                          <div className="text-xs text-slate-400 mt-0.5 font-mono">
-                            Survey: {rec.survey_number?.value ?? '—'}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end space-y-1">
-                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                      <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                        <span className="text-xs font-bold text-slate-200">Deed Record Page {item.page_number}</span>
+                        <div className="flex items-center space-x-2">
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
                             isValid
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : 'bg-amber-500/10 text-amber-400'
+                              ? 'bg-emerald-500/10 text-emerald-450'
+                              : 'bg-amber-500/10 text-amber-450'
                           }`}>
-                            {isValid ? '✓ VALID' : '⚠ ISSUES'}
+                            {isValid ? 'Valid' : 'Warnings Detected'}
                           </span>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            avg confidence: {(conf * 100).toFixed(0)}%
-                          </span>
+                          <span className="text-[10px] font-mono text-slate-500">Confidence: {(conf * 100).toFixed(0)}%</span>
                         </div>
                       </div>
 
-                      {/* Field grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {Object.entries(rec).map(([key, field]) => {
-                          if (key === 'raw_ocr_text') return null
-                          if (typeof field !== 'object' || !('value' in field)) return null
-                          const val = Array.isArray(field.value) ? field.value.join(', ') : String(field.value ?? '—')
-                          const conf = field.confidence ?? 0
-                          const confColor = conf >= 0.9 ? 'text-emerald-400' : conf >= 0.6 ? 'text-amber-400' : 'text-red-400'
-                          return (
-                            <div key={key} className="bg-slate-900/60 rounded-lg px-3 py-2">
-                              <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
-                                {key.replace(/_/g, ' ')}
-                              </div>
-                              <div className="text-xs text-slate-200 mt-0.5 font-medium truncate" title={val}>{val}</div>
-                              {field.issue && (
-                                <div className="text-[9px] text-amber-400 mt-0.5">⚠ {field.issue}</div>
-                              )}
-                              <div className={`text-[9px] font-mono mt-0.5 ${confColor}`}>
-                                {(conf * 100).toFixed(0)}% conf
-                              </div>
-                            </div>
-                          )
-                        })}
+                      {/* Fields grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <span className="text-slate-500">Owner Name</span>
+                          <p className="font-semibold text-slate-200">{rec.owner_name?.value || 'Not available'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Survey Number</span>
+                          <p className="font-semibold text-slate-200">{rec.survey_number?.value || 'Not available'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Area</span>
+                          <p className="font-semibold text-slate-200">{rec.area?.value} {rec.area_unit?.value || ''}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Village / District</span>
+                          <p className="font-semibold text-slate-200">{rec.village?.value || 'Not available'} / {rec.district?.value || 'Not available'}</p>
+                        </div>
                       </div>
-
-                      {/* Validation issues */}
-                      {item.issues?.length > 0 && (
-                        <div className="space-y-1 pt-1 border-t border-slate-800">
-                          <div className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider">Validation Issues</div>
-                          {item.issues.map((issue, j) => (
-                            <div key={j} className="text-[10px] text-amber-300/80 font-mono">• {JSON.stringify(issue)}</div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Failed page */}
-                      {item.status === 'failed' && (
-                        <div className="p-3 bg-red-950/40 border border-red-900/40 rounded-lg text-xs text-red-400 font-mono">
-                          ✗ Page failed: {item.error}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
               </div>
             )}
-
-            {/* Failure state */}
-            {phase === 'failed' && (
-              <div className="space-y-4">
-                <div className="p-5 bg-red-950/50 border border-red-800/50 rounded-2xl space-y-2">
-                  <div className="text-sm font-bold text-red-300">Pipeline Failed</div>
-                  <div className="text-xs font-mono text-red-400 whitespace-pre-wrap">{errorMsg}</div>
-                </div>
-                <button
-                  onClick={handleReset}
-                  className="text-xs px-4 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-all"
-                >
-                  ↩ Try again
-                </button>
-              </div>
-            )}
-
-            {/* Still running — no reset button, just wait */}
-            {isRunning && (
-              <div className="text-center text-[10px] text-slate-600 font-mono">
-                Polling job status every {POLL_INTERVAL_MS / 1000}s… do not close this tab.
-              </div>
-            )}
-
           </div>
         )}
-
       </div>
     </div>
   )

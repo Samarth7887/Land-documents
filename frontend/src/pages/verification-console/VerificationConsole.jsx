@@ -71,10 +71,38 @@ const INITIAL_QUEUE = [
 export default function VerificationConsole() {
   const [queue, setQueue] = useState(INITIAL_QUEUE)
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [dbError, setDbError] = useState(false)
+
+  const fetchRecords = async () => {
+    try {
+      const res = await fetch('http://localhost:5000/api/records')
+      if (res.status === 503) {
+        setDbError(true)
+        setQueue([])
+        return
+      }
+      const data = await res.json()
+      if (data.success && data.records) {
+        setQueue(data.records)
+        setDbError(false)
+      } else {
+        setDbError(true)
+        setQueue([])
+      }
+    } catch (err) {
+      console.error("Could not fetch records from backend:", err)
+      setDbError(true)
+      setQueue([])
+    }
+  }
+
+  useEffect(() => {
+    fetchRecords()
+  }, [])
   
   // Current active record details
   const activeRecord = queue[selectedIdx]
-  const [formFields, setFormFields] = useState(activeRecord.fields)
+  const [formFields, setFormFields] = useState(activeRecord ? activeRecord.fields : {})
   const [unreadableOverrides, setUnreadableOverrides] = useState({})
   const [correctionLogs, setCorrectionLogs] = useState([])
   const [message, setMessage] = useState(null)
@@ -89,6 +117,7 @@ export default function VerificationConsole() {
 
   // Fetch the record's history trail from the backend
   const fetchHistory = async () => {
+    if (!activeRecord) return
     try {
       const res = await fetch(`http://localhost:5000/api/records/${activeRecord.id}/history`)
       const data = await res.json()
@@ -102,6 +131,7 @@ export default function VerificationConsole() {
 
   // Reset form and overrides when active record changes
   useEffect(() => {
+    if (!activeRecord) return
     setFormFields(activeRecord.fields)
     setUnreadableOverrides({})
     setMessage(null)
@@ -109,6 +139,26 @@ export default function VerificationConsole() {
     setPanOffset({ x: 0, y: 0 })
     fetchHistory()
   }, [selectedIdx, activeRecord])
+
+  if (dbError) {
+    return (
+      <div className="flex-1 p-12 flex flex-col items-center justify-center bg-slate-900 text-slate-100">
+        <div className="max-w-md w-full bg-slate-950 border border-red-500/30 rounded-2xl p-8 text-center space-y-4 shadow-xl">
+          <div className="text-red-500 text-3xl font-bold font-mono">⚠️</div>
+          <h2 className="text-lg font-bold text-slate-200">Database unavailable</h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            The PostgreSQL database is offline. Real-time land registries and review queues cannot be loaded.
+          </p>
+          <button
+            onClick={fetchRecords}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg text-slate-300 font-semibold transition-colors"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // Helper to map confidence score to band
   const getConfidenceBand = (score) => {

@@ -1,58 +1,36 @@
-// Mock PostgreSQL/Supabase database memory manager
-// Simulates the schema tables, RLS policies, and audit triggers for local dev/demo safety.
-
+const { Pool } = require('pg');
 const http = require('http');
 
-const db = {
-  users: [
-    { id: "rev-clerk-001", name: "Clerk Ram", role: "clerk", district: "Green Valley" },
-    { id: "rev-super-002", name: "Supervisor Sita", role: "supervisor", district: "All" },
-    { id: "rev-admin-003", name: "Admin Laxman", role: "admin", district: "All" }
-  ],
-  records: [
-    {
-      id: "rec_9011",
-      village: "Green Valley",
-      district: "Green Valley",
-      overallStatus: "needs_review",
-      imageUrl: "http://localhost:5000/static/clean_scan.png",
-      fields: {
-        owner_name: { value: "Johnathan Smith", confidence: 0.95, original_value: "Johnathan Smith" },
-        survey_number: { value: "404-B / Part 2", confidence: 0.52, original_value: "404-B / Part 2", issue: "Duplicate survey number detected in Green Valley" },
-        khasra_or_khata_number: { value: "KH-88902", confidence: 0.85, original_value: "KH-88902" },
-        area: { value: 55.75, confidence: 0.95, original_value: "55.75", issue: "Plausible maximum size exceeded. Area 55.75 exceeds limit of 50.0" },
-        area_unit: { value: "Acres", confidence: 0.98, original_value: "Acres" },
-        village: { value: "Green Valley", confidence: 0.90, original_value: "Green Valley" },
-        taluk: { value: "East Taluk", confidence: 0.85, original_value: "East Taluk" },
-        district: { value: "River District", confidence: 0.95, original_value: "River District" },
-        land_classification: { value: "Agricultural (Wet Land)", confidence: 0.92, original_value: "Agricultural (Wet Land)" },
-        khata_type: { value: "A", confidence: 0.88, original_value: "A" },
-        tenancy_status: { value: "Owner-cultivated", confidence: 0.90, original_value: "Owner-cultivated" },
-        liabilities: { value: ["Bank Mortgage of 500,000 INR"], confidence: 0.80, original_value: ["Bank Mortgage of 500,000 INR"] },
-        tax_status: { value: "Paid", confidence: 0.95, original_value: "Paid" }
-      },
-      signature: null,
-      public_key: null,
-      qr_code: null,
-      document_id: null
-    }
-  ],
-  corrections: [],
-  audit_log: [
-    {
-      id: "log-init-001",
-      record_id: "rec_9011",
-      actor_id: "system-ai",
-      previous_state: null,
-      new_state: "extracted",
-      timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString()
-    }
-  ]
+const poolConfig = {
+  host: process.env.PGHOST || 'localhost',
+  port: parseInt(process.env.PGPORT) || 5432,
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD || 'postgres',
+  database: process.env.PGDATABASE || 'land_records',
+  connectionTimeoutMillis: 3000 // 3 seconds timeout
 };
 
+const pool = new Pool(poolConfig);
+
+// Diagnostic connection test function
+async function checkDbConnection() {
+  let client;
+  try {
+    client = await pool.connect();
+    return true;
+  } catch (err) {
+    console.error("Database connection failure:", err.message);
+    return false;
+  } finally {
+    if (client) client.release();
+  }
+}
+
 // Simulated Row Level Security validator
-function validateRLS(actorId, recordDistrict, action = "select") {
-  const user = db.users.find(u => u.id === actorId);
+async function validateRLS(client, actorId, recordDistrict) {
+  const userRes = await client.query('SELECT * FROM users WHERE id = $1', [actorId]);
+  const user = userRes.rows[0];
+  
   if (!user) {
     throw new Error(`Unauthorized: User ID ${actorId} not found.`);
   }
@@ -80,7 +58,7 @@ function fetchSignatureFromService(fields, verifyUrl) {
     const payload = JSON.stringify({ fields, verify_url: verifyUrl });
     const options = {
       hostname: '127.0.0.1',
-      port: 8004,
+      port: 8014,
       path: '/sign',
       method: 'POST',
       headers: {
@@ -102,7 +80,7 @@ function fetchSignatureFromService(fields, verifyUrl) {
     });
 
     req.on('error', () => {
-      resolve(null); // Fallback to mock locally
+      resolve(null);
     });
 
     req.write(payload);
@@ -110,143 +88,220 @@ function fetchSignatureFromService(fields, verifyUrl) {
   });
 }
 
-// Save corrections helper simulating DB transaction
-function saveFieldCorrections(recordId, correctionsList, actorId) {
-  const record = db.records.find(r => r.id === recordId);
-  if (!record) {
-    throw new Error(`Record ${recordId} not found.`);
-  }
-
-  // Verify RLS policy
-  validateRLS(actorId, record.district, "update");
-
-  const timestamp = new Date().toISOString();
-  let wasApproved = record.overallStatus === "approved";
-
-  // Log to corrections table
-  correctionsList.forEach(c => {
-    // DB Constraint simulation
-    if (!c.field || c.original_value === undefined || c.corrected_value === undefined) {
-      throw new Error("Bad Request: Missing correction field values.");
-    }
-
-    db.corrections.push({
-      id: `corr-${Math.random().toString(36).substring(2, 8)}`,
-      record_id: recordId,
-      reviewer_id: actorId,
-      field_name: c.field,
-      original_value: String(c.original_value),
-      corrected_value: String(c.corrected_value),
-      timestamp
-    });
-
-    // Update field value on record
-    if (record.fields[c.field]) {
-      record.fields[c.field].value = c.corrected_value;
-      record.fields[c.field].confidence = 0.99; // Manually corrected = high confidence
-      if (record.fields[c.field].issue) {
-        delete record.fields[c.field].issue;
-      }
-    }
-  });
-
-  // Log state change to audit_log
-  const previousState = record.overallStatus;
-  record.overallStatus = "corrected";
-  record.updated_at = timestamp;
-
-  // RULE 5: Invalidate old signature and QR code if edited after approval
-  if (wasApproved) {
-    record.signature = null;
-    record.public_key = null;
-    record.qr_code = null;
-    record.document_id = null;
-
-    db.audit_log.push({
-      id: `log-inv-${Math.random().toString(36).substring(2, 8)}`,
-      record_id: recordId,
-      actor_id: actorId,
-      previous_state: "approved",
-      new_state: "invalidated",
-      timestamp
-    });
-  }
-
-  db.audit_log.push({
-    id: `log-${Math.random().toString(36).substring(2, 8)}`,
-    record_id: recordId,
-    actor_id: actorId,
-    previous_state: previousState,
-    new_state: "corrected",
-    timestamp
-  });
-
-  return record;
+// Get all records in the database
+async function getRecords() {
+  const isOnline = await checkDbConnection();
+  if (!isOnline) throw new Error("Database unavailable");
+  
+  const res = await pool.query(`
+    SELECT id, status as "overallStatus", district, extracted_fields as fields, 
+           signature, public_key, qr_code, document_id_code as document_id 
+    FROM records
+    ORDER BY created_at DESC
+  `);
+  return res.rows;
 }
 
-// Approve record helper simulating DB transaction
+// Get specific record by ID
+async function getRecordById(recordId) {
+  const isOnline = await checkDbConnection();
+  if (!isOnline) throw new Error("Database unavailable");
+
+  const res = await pool.query(`
+    SELECT id, status as "overallStatus", district, extracted_fields as fields, 
+           signature, public_key, qr_code, document_id_code as document_id 
+    FROM records
+    WHERE id = $1
+  `, [recordId]);
+  return res.rows[0];
+}
+
+// Save corrections helper using DB transaction
+async function saveFieldCorrections(recordId, correctionsList, actorId) {
+  const isOnline = await checkDbConnection();
+  if (!isOnline) throw new Error("Database unavailable");
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch active record
+    const recordRes = await client.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    const record = recordRes.rows[0];
+    if (!record) {
+      throw new Error(`Record ${recordId} not found.`);
+    }
+
+    // Verify RLS policy
+    await validateRLS(client, actorId, record.district);
+
+    const previousState = record.status;
+    const wasApproved = previousState === "approved";
+    const fields = record.extracted_fields;
+
+    // Log to corrections table
+    for (const c of correctionsList) {
+      if (!c.field || c.original_value === undefined || c.corrected_value === undefined) {
+        throw new Error("Bad Request: Missing correction field values.");
+      }
+
+      await client.query(`
+        INSERT INTO corrections (record_id, reviewer_id, field_name, original_value, corrected_value)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [recordId, actorId, c.field, String(c.original_value), String(c.corrected_value)]);
+
+      // Update field values in local JSON object
+      if (fields[c.field]) {
+        fields[c.field].value = c.corrected_value;
+        fields[c.field].confidence = 0.99; // high confidence for manual edits
+        if (fields[c.field].issue) {
+          delete fields[c.field].issue;
+        }
+      }
+    }
+
+    // Update records status to corrected and invalidate signature if previously approved
+    let signature = record.signature;
+    let public_key = record.public_key;
+    let qr_code = record.qr_code;
+    let document_id_code = record.document_id_code;
+
+    if (wasApproved) {
+      signature = null;
+      public_key = null;
+      qr_code = null;
+      document_id_code = null;
+
+      // Log invalidation audit
+      await client.query(`
+        INSERT INTO audit_log (record_id, actor_id, previous_state, new_state)
+        VALUES ($1, $2, 'approved', 'invalidated')
+      `, [recordId, actorId]);
+    }
+
+    // Update record row in PostgreSQL
+    await client.query(`
+      UPDATE records 
+      SET status = 'corrected', extracted_fields = $1, signature = $2, 
+          public_key = $3, qr_code = $4, document_id_code = $5, updated_at = NOW()
+      WHERE id = $6
+    `, [JSON.stringify(fields), signature, public_key, qr_code, document_id_code, recordId]);
+
+    // Log corrected audit trail
+    await client.query(`
+      INSERT INTO audit_log (record_id, actor_id, previous_state, new_state)
+      VALUES ($1, $2, $3, 'corrected')
+    `, [recordId, actorId, previousState]);
+
+    await client.query('COMMIT');
+
+    // Retrieve and return updated record
+    return await getRecordById(recordId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Approve record helper using DB transaction
 async function approveRecord(recordId, actorId) {
-  const record = db.records.find(r => r.id === recordId);
-  if (!record) {
-    throw new Error(`Record ${recordId} not found.`);
+  const isOnline = await checkDbConnection();
+  if (!isOnline) throw new Error("Database unavailable");
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch active record
+    const recordRes = await client.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    const record = recordRes.rows[0];
+    if (!record) {
+      throw new Error(`Record ${recordId} not found.`);
+    }
+
+    // Verify RLS policy
+    await validateRLS(client, actorId, record.district);
+
+    const previousState = record.status;
+    const docId = `doc_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+    const verifyUrl = `http://localhost:5000/verify/${docId}`;
+
+    // Call signing service
+    const signResult = await fetchSignatureFromService(record.extracted_fields, verifyUrl);
+
+    let signature = "MOCK_RSA_PSS_SHA256_SIGNATURE_HEX_BASE64_VALUE";
+    let public_key = "MOCK_RSA_PUBLIC_KEY_PEM";
+    let qr_code = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    if (signResult && signResult.success) {
+      signature = signResult.signature;
+      public_key = signResult.public_key;
+      qr_code = signResult.qr_code;
+    }
+
+    // Update records row status to approved and store signature blocks
+    await client.query(`
+      UPDATE records 
+      SET status = 'approved', signature = $1, public_key = $2, 
+          qr_code = $3, document_id_code = $4, updated_at = NOW()
+      WHERE id = $5
+    `, [signature, public_key, qr_code, docId, recordId]);
+
+    // Insert into approvals
+    await client.query(`
+      INSERT INTO approvals (record_id, supervisor_id, signature)
+      VALUES ($1, $2, $3)
+    `, [recordId, actorId, signature]);
+
+    // Log approved state transition
+    await client.query(`
+      INSERT INTO audit_log (record_id, actor_id, previous_state, new_state)
+      VALUES ($1, $2, $3, 'approved')
+    `, [recordId, actorId, previousState]);
+
+    await client.query('COMMIT');
+
+    return await getRecordById(recordId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  // Verify RLS policy
-  validateRLS(actorId, record.district, "update");
-
-  const timestamp = new Date().toISOString();
-  const previousState = record.overallStatus;
-
-  // Generate unique document id
-  const docId = `doc_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-  const verifyUrl = `http://localhost:5000/verify/${docId}`;
-
-  // Call the python verification-mark microservice to sign
-  const signResult = await fetchSignatureFromService(record.fields, verifyUrl);
-
-  if (signResult && signResult.success) {
-    record.signature = signResult.signature;
-    record.public_key = signResult.public_key;
-    record.qr_code = signResult.qr_code;
-    record.document_id = docId;
-  } else {
-    // Local fallback for robust demo environments if signing microservice is not online
-    record.signature = "MOCK_RSA_PSS_SHA256_SIGNATURE_HEX_BASE64_VALUE";
-    record.public_key = "MOCK_RSA_PUBLIC_KEY_PEM";
-    record.qr_code = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="; // dummy pixel
-    record.document_id = docId;
-  }
-
-  record.overallStatus = "approved";
-  record.updated_at = timestamp;
-
-  // Log state change to audit_log (Append-only)
-  db.audit_log.push({
-    id: `log-${Math.random().toString(36).substring(2, 8)}`,
-    record_id: recordId,
-    actor_id: actorId,
-    previous_state: previousState,
-    new_state: "approved",
-    timestamp
-  });
-
-  return record;
 }
 
 // Retrieve audit logs + corrections combined trail
-function getRecordHistory(recordId) {
-  const logs = db.audit_log.filter(l => l.record_id === recordId);
-  const corrs = db.corrections.filter(c => c.record_id === recordId);
-  
-  // Return unified trails chronological sorted
+async function getRecordHistory(recordId) {
+  const isOnline = await checkDbConnection();
+  if (!isOnline) throw new Error("Database unavailable");
+
+  const auditRes = await pool.query(`
+    SELECT id, record_id, actor_id, previous_state, new_state, timestamp
+    FROM audit_log 
+    WHERE record_id = $1 
+    ORDER BY timestamp ASC
+  `, [recordId]);
+
+  const corrRes = await pool.query(`
+    SELECT id, record_id, reviewer_id, field_name, original_value, corrected_value, timestamp
+    FROM corrections 
+    WHERE record_id = $1 
+    ORDER BY timestamp ASC
+  `, [recordId]);
+
   return {
-    state_transitions: logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)),
-    field_corrections: corrs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    state_transitions: auditRes.rows,
+    field_corrections: corrRes.rows
   };
 }
 
 module.exports = {
-  db,
+  pool,
+  checkDbConnection,
+  getRecords,
+  getRecordById,
   saveFieldCorrections,
   approveRecord,
   getRecordHistory,

@@ -1,12 +1,38 @@
 const express = require('express');
 const router = express.Router();
 const http = require('http');
-const { saveFieldCorrections, approveRecord, getRecordHistory, db } = require('../db/connection');
+const { 
+  saveFieldCorrections, 
+  approveRecord, 
+  getRecordHistory, 
+  getRecords, 
+  getRecordById,
+  pool,
+  checkDbConnection
+} = require('../db/connection');
 
 const MOCK_ACTOR_ID = "rev-clerk-001"; 
 
+// Get all records in the database: GET /api/records
+router.get('/', async (req, res) => {
+  try {
+    const records = await getRecords();
+    return res.json({
+      success: true,
+      records
+    });
+  } catch (error) {
+    console.error("[Get Records Endpoint Error]:", error.message);
+    const code = error.message === "Database unavailable" ? 503 : 500;
+    return res.status(code).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // 1. Correct record fields: POST /records/:id/correct
-router.post('/:id/correct', (req, res) => {
+router.post('/:id/correct', async (req, res) => {
   const recordId = req.params.id;
   const corrections = req.body; 
 
@@ -15,7 +41,7 @@ router.post('/:id/correct', (req, res) => {
   }
 
   try {
-    const updatedRecord = saveFieldCorrections(recordId, corrections, MOCK_ACTOR_ID);
+    const updatedRecord = await saveFieldCorrections(recordId, corrections, MOCK_ACTOR_ID);
     return res.json({
       success: true,
       message: "Corrections saved successfully and logged to audit trail.",
@@ -23,14 +49,16 @@ router.post('/:id/correct', (req, res) => {
     });
   } catch (error) {
     console.error("[Correct Record Endpoint Error]:", error.message);
-    return res.status(error.message.includes("Access Denied") ? 403 : 500).json({
+    const code = error.message === "Database unavailable" ? 503 : 
+                 error.message.includes("Access Denied") ? 403 : 500;
+    return res.status(code).json({
       success: false,
       error: error.message
     });
   }
 });
 
-// 2. Approve record: POST /records/:id/approve (ASYNC version)
+// 2. Approve record: POST /records/:id/approve
 router.post('/:id/approve', async (req, res) => {
   const recordId = req.params.id;
   const supervisorActorId = "rev-super-002"; 
@@ -44,7 +72,8 @@ router.post('/:id/approve', async (req, res) => {
     });
   } catch (error) {
     console.error("[Approve Record Endpoint Error]:", error.message);
-    return res.status(500).json({
+    const code = error.message === "Database unavailable" ? 503 : 500;
+    return res.status(code).json({
       success: false,
       error: error.message
     });
@@ -52,18 +81,19 @@ router.post('/:id/approve', async (req, res) => {
 });
 
 // 3. Get history trail: GET /records/:id/history
-router.get('/:id/history', (req, res) => {
+router.get('/:id/history', async (req, res) => {
   const recordId = req.params.id;
 
   try {
-    const history = getRecordHistory(recordId);
+    const history = await getRecordHistory(recordId);
     return res.json({
       success: true,
       history
     });
   } catch (error) {
     console.error("[Get History Endpoint Error]:", error.message);
-    return res.status(500).json({
+    const code = error.message === "Database unavailable" ? 503 : 500;
+    return res.status(code).json({
       success: false,
       error: error.message
     });
@@ -76,7 +106,7 @@ function verifySignatureWithService(fields, signature) {
     const payload = JSON.stringify({ fields, signature });
     const options = {
       hostname: '127.0.0.1',
-      port: 8004,
+      port: 8014,
       path: '/verify',
       method: 'POST',
       headers: {
@@ -99,7 +129,7 @@ function verifySignatureWithService(fields, signature) {
     });
 
     req.on('error', () => {
-      resolve(false); // Fallback
+      resolve(false);
     });
 
     req.write(payload);
@@ -108,50 +138,76 @@ function verifySignatureWithService(fields, signature) {
 }
 
 // 4. Verification Landing Page: GET /verify/:document_id
-// (Returns verification status and visual indicators as HTML or JSON. We will return a beautiful JSON status metadata payload, which is ideal for the frontend UI check).
 router.get('/verify-id/:document_id', async (req, res) => {
   const docId = req.params.document_id;
-  const record = db.records.find(r => r.document_id === docId);
 
-  if (!record) {
-    return res.status(404).json({
+  const isOnline = await checkDbConnection();
+  if (!isOnline) {
+    return res.status(503).json({
       verified: false,
-      status: "Mismatch - record not found",
-      message: "The requested document signature has been invalidated or does not exist."
+      status: "Database unavailable",
+      message: "The database is offline. Cannot check signature validation."
     });
   }
 
-  // Get approval date from audit logs
-  const approvalLog = db.audit_log.find(l => l.record_id === record.id && l.new_state === "approved");
-  const approvalDate = approvalLog ? new Date(approvalLog.timestamp).toLocaleDateString() : "unknown date";
-  const reviewer = db.users.find(u => u.id === approvalLog?.actor_id)?.name || "Supervisor";
+  try {
+    const recordRes = await pool.query('SELECT * FROM records WHERE document_id_code = $1', [docId]);
+    const record = recordRes.rows[0];
 
-  // Re-verify signature against current field values using python signer
-  let isValid = false;
-  if (record.signature) {
-    isValid = await verifySignatureWithService(record.fields, record.signature);
-  }
+    if (!record) {
+      return res.status(404).json({
+        verified: false,
+        status: "Mismatch - record not found",
+        message: "The requested document signature has been invalidated or does not exist."
+      });
+    }
 
-  if (isValid) {
-    return res.json({
-      verified: true,
-      status: "Verified",
-      message: `Verified - signed by ${reviewer} on ${approvalDate}, record unaltered`,
-      record: {
-        id: record.id,
-        village: record.village,
-        fields: record.fields
-      }
-    });
-  } else {
-    return res.json({
+    // Get approval date from audit logs
+    const auditRes = await pool.query(`
+      SELECT a.timestamp, u.name as reviewer
+      FROM audit_log a
+      LEFT JOIN users u ON a.actor_id = u.id
+      WHERE a.record_id = $1 AND a.new_state = 'approved'
+      ORDER BY a.timestamp DESC LIMIT 1
+    `, [record.id]);
+    
+    const approvalLog = auditRes.rows[0];
+    const approvalDate = approvalLog ? new Date(approvalLog.timestamp).toLocaleDateString() : "unknown date";
+    const reviewer = approvalLog?.reviewer || "Supervisor";
+
+    // Re-verify signature against current field values using python signer
+    let isValid = false;
+    if (record.signature) {
+      isValid = await verifySignatureWithService(record.extracted_fields, record.signature);
+    }
+
+    if (isValid) {
+      return res.json({
+        verified: true,
+        status: "Verified",
+        message: `Verified - signed by ${reviewer} on ${approvalDate}, record unaltered`,
+        record: {
+          id: record.id,
+          village: record.village,
+          fields: record.extracted_fields
+        }
+      });
+    } else {
+      return res.json({
+        verified: false,
+        status: "Mismatch",
+        message: "Mismatch - record has changed since signing",
+        record: {
+          id: record.id,
+          village: record.village
+        }
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
       verified: false,
-      status: "Mismatch",
-      message: "Mismatch - record has changed since signing",
-      record: {
-        id: record.id,
-        village: record.village
-      }
+      status: "Error",
+      message: err.message
     });
   }
 });

@@ -100,8 +100,20 @@ app.use('/api', documentsService.router);
 // Public verification landing page: GET /verify/:document_id
 app.get('/verify/:document_id', async (req, res) => {
   const docId = req.params.document_id;
-  const { db } = require('./db/connection');
-  const record = db.records.find(r => r.document_id === docId);
+  const { pool, checkDbConnection } = require('./db/connection');
+  
+  const dbOnline = await checkDbConnection();
+  if (!dbOnline) {
+    return res.status(503).send("Database unavailable");
+  }
+
+  let record;
+  try {
+    const recordRes = await pool.query('SELECT * FROM records WHERE document_id_code = $1', [docId]);
+    record = recordRes.rows[0];
+  } catch (err) {
+    return res.status(500).send("Database error: " + err.message);
+  }
 
   // Styling helper function
   const renderPage = (title, message, isVerified, details = '') => `
@@ -158,10 +170,10 @@ app.get('/verify/:document_id', async (req, res) => {
   const http = require('http');
   const checkSignature = () => new Promise((resolve) => {
     if (!record.signature) return resolve(false);
-    const payload = JSON.stringify({ fields: record.fields, signature: record.signature });
+    const payload = JSON.stringify({ fields: record.extracted_fields, signature: record.signature });
     const options = {
       hostname: '127.0.0.1',
-      port: 8004,
+      port: 8014,
       path: '/verify',
       method: 'POST',
       headers: {
@@ -186,18 +198,33 @@ app.get('/verify/:document_id', async (req, res) => {
   isValid = await checkSignature();
 
   if (isValid) {
-    const approvalLog = db.audit_log.find(l => l.record_id === record.id && l.new_state === "approved");
-    const approvalDate = approvalLog ? new Date(approvalLog.timestamp).toLocaleString() : "unknown date";
-    const reviewer = db.users.find(u => u.id === approvalLog?.actor_id)?.name || "Supervisor Sita";
+    let reviewer = "Supervisor";
+    let approvalDate = "unknown date";
+    try {
+      const auditRes = await pool.query(`
+        SELECT a.timestamp, u.name as reviewer
+        FROM audit_log a
+        LEFT JOIN users u ON a.actor_id = u.id
+        WHERE a.record_id = $1 AND a.new_state = 'approved'
+        ORDER BY a.timestamp DESC LIMIT 1
+      `, [record.id]);
+      if (auditRes.rows[0]) {
+        approvalDate = new Date(auditRes.rows[0].timestamp).toLocaleString();
+        reviewer = auditRes.rows[0].reviewer || "Supervisor";
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
+    const fields = record.extracted_fields;
     const fieldsDetails = `
       <div class="space-y-3 border-t border-slate-900 pt-4 text-xs font-mono">
         <div class="text-slate-400 uppercase tracking-wider font-semibold text-[10px]">Registry Snapshot:</div>
         <div class="grid grid-cols-2 gap-y-1.5 gap-x-4 bg-slate-900 p-3.5 rounded-xl border border-slate-850">
-          <div><span class="text-slate-500 font-sans">Owner:</span> <span class="text-slate-200 font-bold">${record.fields.owner_name.value}</span></div>
-          <div><span class="text-slate-500 font-sans">Survey:</span> <span class="text-slate-200 font-bold">${record.fields.survey_number.value}</span></div>
-          <div><span class="text-slate-500 font-sans">Area:</span> <span class="text-slate-200 font-bold">${record.fields.area.value} ${record.fields.area_unit.value}</span></div>
-          <div><span class="text-slate-500 font-sans">Village:</span> <span class="text-slate-200 font-bold">${record.fields.village.value}</span></div>
+          <div><span class="text-slate-500 font-sans">Owner:</span> <span class="text-slate-200 font-bold">${fields.owner_name.value}</span></div>
+          <div><span class="text-slate-500 font-sans">Survey:</span> <span class="text-slate-200 font-bold">${fields.survey_number.value}</span></div>
+          <div><span class="text-slate-500 font-sans">Area:</span> <span class="text-slate-200 font-bold">${fields.area.value} ${fields.area_unit.value}</span></div>
+          <div><span class="text-slate-500 font-sans">Village:</span> <span class="text-slate-200 font-bold">${fields.village.value}</span></div>
         </div>
       </div>
     `;
@@ -217,6 +244,13 @@ app.get('/verify/:document_id', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const { runMigrations } = require('./db/run_migrations');
+
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  try {
+    await runMigrations();
+  } catch (err) {
+    console.error("✗ Failed to execute database migrations on server startup:", err.message);
+  }
 });
