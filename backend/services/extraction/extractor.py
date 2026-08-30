@@ -2,7 +2,7 @@
 extractor.py — Land record field extraction using Gemini Vision API.
 
 SDK: google-genai (replaces deprecated google-generativeai)
-Model: gemini-1.5-flash (existing, validated model — do not change without testing)
+Model: gemini-3.5-flash (validated supported model for this runtime)
 
 Environment:
     GEMINI_API_KEY must be set (loaded from backend/.env via main.py startup)
@@ -24,7 +24,7 @@ from google.genai import types
 # Configurable Constants
 # ==========================================================================
 HANDWRITTEN_CONFIDENCE_CEILING = 0.80
-GEMINI_MODEL = "gemini-3.6-flash"  # Updated based on API requirements
+GEMINI_MODEL = "gemini-3.5-flash"
 
 # ==========================================================================
 # Pydantic Schemas  (unchanged from original)

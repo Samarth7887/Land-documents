@@ -62,6 +62,9 @@ def split_pdf_to_pages(pdf_path: str, output_dir: str) -> list:
                 page_path = os.path.join(output_dir, f"page_{idx+1}.png")
                 pix.save(page_path)
                 page_paths.append((idx + 1, page_path))
+                page_text = reader.pages[idx].extract_text() or ""
+                with open(page_path + ".txt", "w", encoding="utf-8") as f:
+                    f.write(page_text)
             print(f"[Splitter] Successfully rendered {len(doc)} pages using PyMuPDF.")
             return page_paths
         except Exception as fitz_err:
@@ -75,6 +78,9 @@ def split_pdf_to_pages(pdf_path: str, output_dir: str) -> list:
                 page_path = os.path.join(output_dir, f"page_{idx+1}.png")
                 img.save(page_path, "PNG")
                 page_paths.append((idx + 1, page_path))
+                page_text = reader.pages[idx].extract_text() or ""
+                with open(page_path + ".txt", "w", encoding="utf-8") as f:
+                    f.write(page_text)
             return page_paths
         except Exception as img_err:
             print(f"[Splitter] pdf2image rendering failed ({img_err}). Falling back to text-based extraction...")
@@ -102,6 +108,15 @@ async def classify_page(page_num: int, page_path: str, use_gemini: bool = True) 
     """
     Classifies a page as one of: cover_page, record_entry, mutation_log, blank_or_duplicate.
     """
+    page_text = ""
+    text_path = page_path + ".txt"
+    if os.path.exists(text_path):
+        try:
+            with open(text_path, "r", encoding="utf-8") as f:
+                page_text = f.read().strip()
+        except Exception:
+            page_text = ""
+
     # If using local mock/offline or Gemini API isn't set up
     if not use_gemini or not os.environ.get("GEMINI_API_KEY"):
         # Simulated sequential page classification for demo robustness
@@ -122,9 +137,15 @@ async def classify_page(page_num: int, page_path: str, use_gemini: bool = True) 
         
         img = Image.open(page_path)
         prompt = (
-            "Classify this document page. Reply with exactly one of these labels: "
+            "Classify this scanned land-document page. Reply with exactly one of these labels: "
             "'cover_page', 'record_entry', 'mutation_log', or 'blank_or_duplicate'. "
-            "Do not write extra explanation."
+            "Use the page image and any extracted text below. "
+            "If the page contains cadastral, ownership, survey, khata, area, village, taluk, district, "
+            "tax, tenancy, or land-classification details, label it 'record_entry' even if it is the only page "
+            "or also includes a title/header. "
+            "Reserve 'cover_page' for front matter or index pages that do not contain substantive record data. "
+            "Do not write extra explanation.\n\n"
+            f"Extracted text:\n{page_text or '[no embedded text found]'}"
         )
         response = model.generate_content([prompt, img])
         label = response.text.strip().lower()

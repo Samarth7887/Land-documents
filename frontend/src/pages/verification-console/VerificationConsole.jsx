@@ -68,6 +68,43 @@ export default function VerificationConsole() {
     }
   }
 
+  const getStatusLabel = (status = '') => {
+    switch (String(status || '').toLowerCase()) {
+      case 'approved':
+        return 'Human-verified & signed'
+      case 'corrected':
+        return 'Corrected'
+      case 'extracted':
+        return 'AI-extracted'
+      case 'review':
+        return 'Needs Review'
+      case 'correction_needed':
+        return 'Needs Correction'
+      default:
+        return status || 'Unknown'
+    }
+  }
+
+  const getStatusClass = (status = '') => {
+    switch (String(status || '').toLowerCase()) {
+      case 'approved':
+        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+      case 'corrected':
+        return 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+      case 'extracted':
+      case 'review':
+        return 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+      case 'correction_needed':
+        return 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+      default:
+        return 'bg-slate-500/10 text-slate-400 border-slate-500/30'
+    }
+  }
+
+  const getFieldValue = (record, key, fallback = '—') => {
+    return record?.fields?.[key]?.value ?? fallback
+  }
+
   // Reset form and overrides when active record changes
   useEffect(() => {
     if (!activeRecord) return
@@ -100,26 +137,31 @@ export default function VerificationConsole() {
   }
 
   if (isLoading) {
-  return (
-    <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
-      <span className="text-gray-400">Loading records…</span>
-    </div>
-  );
-}
+    return (
+      <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
+        <span className="text-gray-400">Loading records…</span>
+      </div>
+    )
+  }
 
-if (!queue.length) {
-  return (
-    <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
-      <span className="text-gray-400">No documents require review.</span>
-    </div>
-  );
-}
-  return (
-    <div className="flex-1 p-12 flex items-center justify-center bg-slate-900 text-slate-100">
-      <span className="text-gray-400">Loading records…</span>
-    </div>
-  )
-}
+  if (!queue.length) {
+    return (
+      <div className="flex-1 p-12 flex flex-col items-center justify-center bg-slate-900 text-slate-100">
+        <div className="max-w-md w-full rounded-2xl border border-slate-800 bg-slate-950/70 p-8 text-center space-y-3">
+          <h2 className="text-lg font-bold text-slate-200">No records available</h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            When the pipeline extracts new land records, they will appear here for review and approval.
+          </p>
+          <button
+            onClick={fetchRecords}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg text-slate-300 font-semibold transition-colors"
+          >
+            Refresh Queue
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const getConfidenceBand = (score) => {
     if (score >= 0.9) return { label: "Auto Approved", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", band: "auto_approved" }
@@ -287,11 +329,11 @@ if (!queue.length) {
           {/* Two-state status badge */}
           {activeRecord.overallStatus === "approved" ? (
             <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-medium">
-              ✓ Human-verified & signed
+              ✓ {getStatusLabel(activeRecord.overallStatus)}
             </span>
           ) : (
             <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-medium">
-              ⚠ AI-extracted - pending review
+              ⚠ {getStatusLabel(activeRecord.overallStatus)}
             </span>
           )}
         </div>
@@ -335,14 +377,16 @@ if (!queue.length) {
                   >
                     <div className="flex justify-between items-center w-full">
                       <span className="font-mono font-bold text-sm text-slate-300">{item.id}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${statusBadge} font-medium`}>
-                        {item.overallStatus}
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getStatusClass(item.overallStatus)} font-medium`}>
+                        {getStatusLabel(item.overallStatus)}
                       </span>
                     </div>
                     
                     <div className="text-xs space-y-1">
-                      <div className="text-slate-300 font-medium">{item.village}</div>
-                      <div className="opacity-60 truncate text-[11px]">{item.documentName}</div>
+                      <div className="text-slate-300 font-medium">{getFieldValue(item, 'village')}</div>
+                      <div className="opacity-60 truncate text-[11px]">
+                        {item.document_id || item.id}
+                      </div>
                     </div>
                   </button>
                 )
